@@ -1,0 +1,46 @@
+# sentry-agent 配置。被监控系统=项目二 judge-service；工具 mock/真实 HTTP/真实文件混合实现。
+# 无 OPENAI_API_KEY 的本机演示与全部单测走默认值即可（llm.enabled=false、watchman.enabled=false）。
+server:
+  port: 8084
+
+spring:
+  application:
+    name: sentry-agent
+
+sentry:
+  # 被守护系统的基础地址（mini-judge 走网关 8080）
+  target-base-url: http://localhost:8080
+  # LLM 总开关：默认 false —— 冒烟与单测走 MockDiagnoserGateway（剧本回包，零网络）。
+  # 置 true 且配好 api-key/base-url/model 即切到 ProdDiagnoserGateway 真实链路，图零改动。
+  llm:
+    enabled: false
+    api-key: ${OPENAI_API_KEY:sk-local-dev-placeholder}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    model: gpt-4o-mini
+  # 反思回环与成本护栏（计划书 3.2：确定性兜底优先于模型能力）
+  max-verify-loops: 3
+  # 全局步数上限：节点每执行一步 STEPS+1，verifyRouter 见 steps>=max-steps 无条件 escalate
+  max-steps: 24
+  token-budget-per-incident: 50000
+  # 读工具 fetchServiceLogs 的真实文件参数（seed-logs 写、fetch 读，同用这两项）
+  logs-dir: ./logs
+  logs-tail-lines: 50
+  # dev 辅助接口开关（POST /api/dev/seed-logs）。生产部署置 false 整体摘除
+  dev-api:
+    enabled: true
+  # Watchman 自动巡检：默认关——未部署 mini-judge 时轮询必失败会疯狂建事件。
+  # 阈值语义与去重冷却的设计说明见 com.sentryagent.service.Watchman 类注释
+  watchman:
+    enabled: false
+    poll-interval-ms: 5000      # 轮询周期：上次结束起算（fixedDelay）
+    queue-threshold: 200        # queueDepth 超过即记一次异常（计划书剧本告警线）
+    consecutive-times: 3        # 同一服务连续异常次数阈值，达到自动建事件
+    cooldown-ms: 300000         # 触发后 5 分钟内同服务不再重复建事件（防自我 DDoS）
+  # SSE 进度流（GET /api/incidents/{id}/stream）：补发+轮询参数
+  sse:
+    poll-interval-ms: 400
+    timeout-ms: 120000
+
+logging:
+  level:
+    com.sentryagent: debug

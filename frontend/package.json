@@ -1,0 +1,21 @@
+{
+  "name": "sentry-agent-console",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "sentry-agent 诊断作战大屏（Vue 3 + Vite + Element Plus + Pinia）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "element-plus": "^2.8.8",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^5.4.11"
+  }
+}
