@@ -23,8 +23,8 @@ const hypo = computed(() => store.snapshot ? parseHypotheses(store.snapshot) : {
       <div v-for="(e, i) in evidences" :key="i" class="card">
         <div class="src-badges">
           <span class="tag" :class="e.first ? 'gen' : 'sec'">{{ e.first ? '首轮取证' : '补充取证' }}</span>
-          <span class="tag src">{{ e.src }}</span>
-          <span v-if="e.byMethod" class="tag src">BY-VERIFY-METHOD</span>
+          <span class="tag src-plain">[{{ e.src.toLowerCase() }}]</span>
+          <span v-if="e.byMethod" class="tag src-plain">[by-verify-method]</span>
         </div>
         <p class="body">{{ e.text }}</p>
       </div>

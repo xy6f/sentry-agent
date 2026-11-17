@@ -15,7 +15,7 @@ const play = (row) => store.loadIncident(row.id);
 <template>
   <section class="glass history-card">
     <div class="head">
-      <h2>事件历史</h2>
+      <h2 class="panel-title">事件历史</h2>
       <button class="btn tiny ghost" @click="store.clearHistory()">清空</button>
     </div>
     <el-table
@@ -47,16 +47,15 @@ const play = (row) => store.loadIncident(row.id);
 </template>
 
 <style scoped>
-.history-card { padding: 16px 20px 14px; }
+.history-card { padding: 12px 16px 12px; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.head h2 { font-size: 15px; letter-spacing: .5px; }
 .mono { font-family: var(--mono); }
 .btn {
-  cursor: pointer; border-radius: 10px; padding: 9px 16px; font-size: 13.5px;
-  color: var(--txt); border: 1px solid var(--line); background: rgba(12,24,44,.8);
-  transition: transform .12s ease, opacity .12s ease;
+  cursor: pointer; border-radius: 2px; padding: 6px 12px; font-size: 12.5px;
+  color: var(--txt); border: 1px solid var(--line); background: var(--panel-3);
+  transition: background .15s ease, border-color .15s ease;
 }
-.btn.ghost:hover { border-color: rgba(34,211,238,.5); }
+.btn.ghost:hover { border-color: var(--dim); }
 .btn.tiny { padding: 4px 10px; font-size: 12px; }
 :deep(.el-table__row) { cursor: pointer; }
 </style>

@@ -3,7 +3,7 @@
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "sentry-agent 诊断作战大屏（Vue 3 + Vite + Element Plus + Pinia）",
+  "description": "sentry-agent 控制台（Vue 3 + Vite + Element Plus + Pinia）",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

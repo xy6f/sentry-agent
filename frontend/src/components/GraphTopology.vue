@@ -126,9 +126,10 @@ onMounted(() => {
 <template>
   <section class="glass topo-card">
     <div class="topo-head">
-      <h2>诊断状态图 <span class="mono live-target">{{ target }}</span></h2>
+      <h2 class="panel-title">诊断状态图 <span class="mono live-target">{{ target }}</span></h2>
       <div class="toolbar">
         <div class="speed" title="拓扑重放动画速度">
+          <span class="speed-label">重放速度</span>
           <button
             v-for="s in SPEEDS" :key="s.ms"
             :class="{ on: speed === s.ms }"
@@ -142,21 +143,11 @@ onMounted(() => {
     <div class="topo-wrap">
       <svg id="topo" viewBox="0 0 1160 330" preserveAspectRatio="xMidYMid meet" :class="{ closing }">
         <defs>
-          <linearGradient id="grad-edge" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#3b82f6"/>
-          </linearGradient>
-          <linearGradient id="grad-node" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#0c1a33"/><stop offset="1" stop-color="#071022"/>
-          </linearGradient>
-          <radialGradient id="grad-glow" cx="0.5" cy="0.5" r="0.5">
-            <stop offset="0" stop-color="#22d3ee" stop-opacity="0.5"/>
-            <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
-          </radialGradient>
           <marker id="arw" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L8,4 L0,8 Z" fill="#22d3ee"/>
+            <path d="M0,0 L8,4 L0,8 Z" fill="#5794f2"/>
           </marker>
           <marker id="arw-red" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L8,4 L0,8 Z" fill="#f87171"/>
+            <path d="M0,0 L8,4 L0,8 Z" fill="#f2495c"/>
           </marker>
         </defs>
 
@@ -186,39 +177,39 @@ onMounted(() => {
 
         <!-- ── 节点：data-node 与后端 timeline[].node 逐字一致 ── -->
         <g class="node" data-node="evidence" :class="nodeCls('evidence')" transform="translate(72,150)">
-          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="10" width="132" height="48"/>
+          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="4" width="132" height="48"/>
           <text class="nname" y="-3">evidence</text><text class="nzh" y="13">{{ NODE_LABEL.evidence }}</text>
         </g>
         <g class="node" data-node="hypothesize" :class="nodeCls('hypothesize')" transform="translate(230,150)">
-          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="10" width="132" height="48"/>
+          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="4" width="132" height="48"/>
           <text class="nname" y="-3">hypothesize</text><text class="nzh" y="13">{{ NODE_LABEL.hypothesize }}</text>
         </g>
         <g class="node" data-node="verify" :class="nodeCls('verify')" transform="translate(390,150)">
-          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="10" width="132" height="48"/>
+          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="4" width="132" height="48"/>
           <text class="nname" y="-3">verify</text><text class="nzh" y="13">{{ NODE_LABEL.verify }}</text>
         </g>
         <g class="node" data-node="plan" :class="nodeCls('plan')" transform="translate(550,150)">
-          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="10" width="132" height="48"/>
+          <circle class="pulse" r="46"/><rect class="nrect" x="-66" y="-24" rx="4" width="132" height="48"/>
           <text class="nname" y="-3">plan</text><text class="nzh" y="13">{{ NODE_LABEL.plan }}</text>
         </g>
         <g class="node node-approval" data-node="awaitApproval" :class="nodeCls('awaitApproval')" transform="translate(720,150)">
-          <circle class="pulse" r="50"/><rect class="nrect" x="-68" y="-24" rx="10" width="136" height="48"/>
+          <circle class="pulse" r="50"/><rect class="nrect" x="-68" y="-24" rx="4" width="136" height="48"/>
           <text class="nname" y="-3">awaitApproval</text><text class="nzh" y="13">⛨ 人工审批闸口</text>
         </g>
         <g class="node" data-node="execute" :class="nodeCls('execute')" transform="translate(910,90)">
-          <circle class="pulse" r="46"/><rect class="nrect" x="-62" y="-24" rx="10" width="124" height="48"/>
+          <circle class="pulse" r="46"/><rect class="nrect" x="-62" y="-24" rx="4" width="124" height="48"/>
           <text class="nname" y="-3">execute</text><text class="nzh" y="13">{{ NODE_LABEL.execute }}</text>
         </g>
         <g class="node node-good" data-node="retrospect" :class="nodeCls('retrospect')" transform="translate(910,232)">
-          <circle class="pulse" r="46"/><rect class="nrect" x="-62" y="-24" rx="10" width="124" height="48"/>
+          <circle class="pulse" r="46"/><rect class="nrect" x="-62" y="-24" rx="4" width="124" height="48"/>
           <text class="nname" y="-3">retrospect</text><text class="nzh" y="13">{{ NODE_LABEL.retrospect }}</text>
         </g>
         <g class="node node-pending" data-node="pending" :class="nodeCls('pending')" transform="translate(720,264)">
-          <circle class="pulse" r="44"/><rect class="nrect" x="-60" y="-20" rx="10" width="120" height="40"/>
+          <circle class="pulse" r="44"/><rect class="nrect" x="-60" y="-20" rx="4" width="120" height="40"/>
           <text class="nname" y="-2">pending</text><text class="nzh" y="12">{{ NODE_LABEL.pending }}</text>
         </g>
         <g class="node node-bad" data-node="escalate" :class="nodeCls('escalate')" transform="translate(390,280)">
-          <circle class="pulse" r="44"/><rect class="nrect" x="-62" y="-20" rx="10" width="124" height="40"/>
+          <circle class="pulse" r="44"/><rect class="nrect" x="-62" y="-20" rx="4" width="124" height="40"/>
           <text class="nname" y="-2">escalate</text><text class="nzh" y="12">{{ NODE_LABEL.escalate }}</text>
         </g>
       </svg>
@@ -227,58 +218,58 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.topo-card { padding: 16px 20px 8px; }
+.topo-card { padding: 12px 16px 10px; }
 .topo-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-.topo-head h2 { font-size: 15px; letter-spacing: .5px; }
-.live-target { color: var(--cyan); font-size: 13px; }
+.live-target { color: var(--dim); font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .mono { font-family: var(--mono); }
 
 .topo-wrap { width: 100%; }
 #topo { width: 100%; height: auto; display: block; }
 
-.edge { stroke: rgba(110,150,200,.30); stroke-width: 1.6; marker-end: url(#arw); opacity: .9; }
+.edge { stroke: #3a3f46; stroke-width: 1.4; marker-end: url(#arw); }
 .edge.dashed { stroke-dasharray: 5 6; }
 .edge.edge-bad { marker-end: url(#arw-red); }
-.edge.lit { stroke: url(#grad-edge); stroke-width: 2.6; filter: drop-shadow(0 0 4px rgba(34,211,238,.7)); }
-.edge.lit.edge-bad { stroke: var(--red); filter: drop-shadow(0 0 4px rgba(248,113,113,.6)); }
+.edge.lit { stroke: var(--info); stroke-width: 2; }
+.edge.lit.edge-bad { stroke: var(--crit); }
 /* 描线动画：mounted 实测 path 长度写入 --len，dashoffset 从满到 0 */
 .edge.draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: drawEdge .5s ease forwards; }
 @keyframes drawEdge { to { stroke-dashoffset: 0; } }
 .edge.dashed.lit { stroke-dasharray: 5 6; animation: flashEdge 1s ease; }
 @keyframes flashEdge { 30% { opacity: .2; } 60% { opacity: 1; } }
 .elbl { fill: var(--dim); font-size: 10.5px; font-family: var(--mono); }
-.elbl.bad { fill: rgba(248,113,113,.75); }
+.elbl.bad { fill: rgba(242,73,92,.75); }
 
-.terminal circle { fill: #0a1526; stroke: var(--dim); stroke-width: 1.4; }
-.terminal .t-start { fill: rgba(34,211,238,.25); }
+.terminal circle { fill: var(--bg); stroke: var(--dim); stroke-width: 1; }
+.terminal .t-start { fill: var(--info); opacity: .55; }
 .t-lbl { fill: var(--dim); font: 10px var(--mono); text-anchor: middle; }
-#topo.closing .t-end { fill: var(--green); stroke: var(--green); animation: endPop 1.6s infinite; }
-@keyframes endPop { 50% { opacity: .4; transform: scale(1.25); } }
+#topo.closing .t-end { fill: var(--ok); stroke: var(--ok); }
 .terminal .t-end { transform-box: fill-box; transform-origin: center; }
 
-.node { transition: opacity .3s; }
-.node .nrect { fill: url(#grad-node); stroke: rgba(110,150,200,.35); stroke-width: 1.4; transition: stroke .3s; }
+.node { transition: opacity .3s; cursor: default; }
+.node .nrect { fill: var(--panel-2); stroke: #3a3f46; stroke-width: 1; transition: stroke .3s; }
+.node:hover .nrect { stroke: var(--dim); }
 .node .nname { fill: var(--txt); font: 600 13px var(--mono); text-anchor: middle; }
 .node .nzh { fill: var(--dim); font-size: 10px; text-anchor: middle; }
-.node .pulse { fill: url(#grad-glow); opacity: 0; transform-box: fill-box; transform-origin: center; }
-.node.lit .nrect { stroke: var(--cyan); filter: drop-shadow(0 0 6px rgba(34,211,238,.35)); }
-.node.lit .nname { fill: #eafcff; }
-/* 当前节点：脉冲光环呼吸 */
-.node.now .pulse { opacity: 1; animation: ring 1.15s ease-out infinite; }
-@keyframes ring { 0% { transform: scale(.55); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
-.node.now .nrect { stroke: var(--cyan); stroke-width: 2.2; }
-/* 等待审批：琥珀呼吸 */
-.node.wait-approval .nrect { stroke: var(--amber); fill: rgba(251,191,36,.08); animation: amberBreath 1.8s ease-in-out infinite; }
-.node.wait-approval .nname { fill: var(--amber); }
-@keyframes amberBreath { 50% { opacity: .45; } }
+.node .pulse { fill: var(--info); opacity: 0; transform-box: fill-box; transform-origin: center; }
+/* 已走过的节点：描边转信息蓝 */
+.node.lit .nrect { stroke: var(--info); }
+.node.lit .nname { fill: var(--txt); }
+/* 当前节点：选中态描边 #5794f2（2px）+ 克制的呼吸光环（2s、幅度减半） */
+.node.now .pulse { opacity: .3; animation: ring 2s ease-out infinite; }
+@keyframes ring { 0% { transform: scale(.85); opacity: .4; } 100% { transform: scale(1.15); opacity: 0; } }
+.node.now .nrect { stroke: var(--info); stroke-width: 2; }
+/* 等待审批：警告黄呼吸（2s、幅度减半，复用全局 stateBreath） */
+.node.wait-approval .nrect { stroke: var(--warn); fill: rgba(242,204,12,.06); animation: stateBreath 2s ease-in-out infinite; }
+.node.wait-approval .nname { fill: var(--warn); }
 /* 终态着色 */
-.node.good .nrect { stroke: var(--green); fill: rgba(52,211,153,.10); }
-.node.good .nname { fill: var(--green); }
-.node.bad .nrect { stroke: var(--red); fill: rgba(248,113,113,.10); animation: amberBreath 1.6s infinite; }
-.node.bad .nname { fill: var(--red); }
+.node.good .nrect { stroke: var(--ok); fill: rgba(115,191,105,.08); }
+.node.good .nname { fill: var(--ok); }
+.node.bad .nrect { stroke: var(--crit); fill: rgba(242,73,92,.08); }
+.node.bad .nname { fill: var(--crit); }
 
-.speed { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
-.speed button { cursor: pointer; border: none; background: transparent; color: var(--dim); font: 12px var(--mono); padding: 7px 11px; }
-.speed button.on { background: rgba(34,211,238,.16); color: var(--cyan); }
+.speed { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.speed-label { font-size: 11px; color: var(--dim); padding: 0 8px; border-right: 1px solid var(--line); }
+.speed button { cursor: pointer; border: none; background: transparent; color: var(--dim); font: 12px var(--mono); padding: 6px 10px; }
+.speed button.on { background: rgba(87,148,242,.16); color: var(--info); }
 </style>

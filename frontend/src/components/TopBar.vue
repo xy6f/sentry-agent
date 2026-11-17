@@ -1,6 +1,8 @@
 <script setup>
 /**
- * 顶栏：品牌 + 四枚徽章（模式推断 / Watchman / API 连通 / 事件终态），
+ * 顶栏（Grafana 风格）：左侧 logo + 低调产品名 sentry-agent + 环境选择器形态徽章，
+ * 右侧为时间范围 / 刷新间隔两个假控件（形态对齐 Grafana 顶栏，仅展示不含逻辑）
+ * + 四枚状态徽章（模式推断 / Watchman / API 连通 / 事件终态）。
  * 逻辑与旧版 index.html + app.js 的徽标区一一对应（inferMode 迁入 parsers.js，store 暴露 computed）。
  */
 import { computed } from 'vue';
@@ -28,11 +30,31 @@ const api = computed(() => apiLog.apiOk === null
 <template>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-dot"></span>
-      <h1>sentry-agent <em>· 诊断作战大屏</em></h1>
-      <span class="brand-sub">Vue 3 + Vite + Element Plus + Pinia · LangGraph4j AIOps 诊断自愈 Agent</span>
+      <svg class="logo" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--info)" stroke-width="1.5"/>
+        <circle cx="8" cy="8" r="2.5" fill="var(--info)"/>
+      </svg>
+      <h1>sentry-agent</h1>
+      <span class="env-badge" title="当前演示环境（假环境选择器徽章，形态对齐 Grafana org/env picker）">
+        <span class="env-dot"></span>DEV
+      </span>
     </div>
-    <div class="badges">
+    <div class="controls">
+      <button class="fake-ctl" title="时间范围选择器（展示形态，非功能控件）">
+        <svg viewBox="0 0 12 12" class="ctl-icon" aria-hidden="true">
+          <path d="M1.5 6.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        Last 6 hours
+        <svg viewBox="0 0 12 12" class="ctl-icon caret" aria-hidden="true">
+          <path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+      </button>
+      <button class="fake-ctl icon-only" title="刷新（展示形态，非功能控件）">
+        <svg viewBox="0 0 12 12" class="ctl-icon" aria-hidden="true">
+          <path d="M10 6a4 4 0 1 1-1.2-2.8M10 1.5V4h-2.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+      </button>
+      <span class="divider" aria-hidden="true"></span>
       <span class="badge" :class="mode.cls" id="badge-mode"
         title="llm.enabled 默认 false（application.yml），走 MockDiagnoserGateway 剧本回包；后端无状态查询接口，徽标在拿到首个事件数据后按回包特征自动改判">
         {{ mode.text }}
@@ -54,24 +76,36 @@ const api = computed(() => apiLog.apiOk === null
 <style scoped>
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 14px 22px; flex-wrap: wrap;
+  padding: 0 16px; height: 48px; flex-wrap: nowrap;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(8,15,30,.9), rgba(5,11,24,.55));
+  background: var(--panel);
 }
-.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.logo { width: 18px; height: 18px; flex-shrink: 0; }
 .brand h1 {
-  font-size: 21px; font-weight: 700; letter-spacing: .5px;
-  background: linear-gradient(90deg, var(--cyan), var(--blue));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-size: 14px; font-weight: 600; letter-spacing: .3px; color: var(--txt);
 }
-.brand h1 em { font-style: normal; }
-.brand-sub { color: var(--dim); font-size: 12px; }
-.brand-dot {
-  width: 10px; height: 10px; border-radius: 50%; align-self: center;
-  background: linear-gradient(135deg, var(--cyan), var(--blue));
-  box-shadow: 0 0 12px var(--cyan);
-  animation: brandBreath 2.6s ease-in-out infinite;
+/* 环境选择器徽章：Grafana org picker 形态（小圆点 + 文本 + 边框） */
+.env-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: 11px/1 var(--mono); letter-spacing: .5px; padding: 4px 9px;
+  border: 1px solid var(--line); border-radius: 2px;
+  background: var(--panel-2); color: var(--dim); cursor: default;
 }
-@keyframes brandBreath { 50% { transform: scale(1.25); opacity: .75; } }
-.badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.env-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+/* Grafana 顶栏假控件：工具条按钮形态（扁平、1px 边框、2px 圆角） */
+.fake-ctl {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: 12px var(--mono); color: var(--dim); cursor: default;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 2px;
+  background: var(--panel-2); user-select: none;
+}
+.fake-ctl.icon-only { padding: 6px 8px; }
+.ctl-icon { width: 12px; height: 12px; }
+.caret { opacity: .7; }
+.divider { width: 1px; height: 20px; background: var(--line); margin: 0 2px; }
+@media (max-width: 900px) {
+  .topbar { height: auto; padding: 10px 16px; flex-wrap: wrap; }
+}
 </style>

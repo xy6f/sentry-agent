@@ -1,8 +1,76 @@
-# sentry-agent · 诊断作战大屏（Vue 3 版）
+# sentry-agent（Vue 3 版）
 
-LangGraph4j AIOps 诊断自愈 Agent 的值班大屏。本版把原生三件套静态页重建为
+LangGraph4j AIOps 诊断自愈 Agent 的值班控制台。本版把原生三件套静态页重建为
 **Vue 3 + Vite（纯 JavaScript，无 TypeScript）+ Element Plus（暗色）+ Pinia**，
 拓扑动画体验与旧静态版（存档于 `legacy-static/`）逐帧对齐甚至更好。
+
+## 设计说明（对标 Grafana + Datadog 的专业可观测性风格）
+
+视觉层只改样式，不动业务逻辑与 API。目标是从"科幻 demo 感"收敛为运维工程师
+每天盯 8 小时的专业工具感——低对比噪声、语义色克制、动效最小化。
+
+### 主题与表面（Grafana 经典配色）
+
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `--bg` | `#111217` | 页面底色（近纯灰黑，替代旧 `#050b18` 蓝黑） |
+| `--panel` | `#181b1f` | 面板底色 |
+| `--panel-2` | `#1c2024` | 行 hover / 嵌套卡 / 徽章底 |
+| `--panel-3` | `#22252b` | 输入框 / 按钮底 |
+| `--line` | `#2c3235` | 全部边框（1px） |
+| `--txt` / `--dim` | `#ccccdc` / `#8e8e8e` | 正文 / 次要文本 |
+
+- 网格背景纹理已删除（`bg-grid` 层与 radial 能量晕一并移除，Datadog 无此元素）。
+- 玻璃拟态（backdrop-filter、大圆角 16px、彩色投影/内发光）全部移除；
+  面板统一为平底、1px `#2c3235` 边框、4px 圆角。
+- 布局走 8px 网格（面板间距 `gap: 8px`，对齐 Grafana 栅格感）。
+
+### 语义状态色（Grafana 调色板，全站收敛到 5 色）
+
+| 令牌 | 值 | 语义 |
+|---|---|---|
+| `--ok` | `#73bf69` | 正常（CLOSED、API 在线、假设成立） |
+| `--warn` | `#f2cc0c` | 警告（AWAITING_APPROVAL、HIGH 之外的中性提示） |
+| `--crit` | `#f2495c` | 严重（ESCALATED/FAILED、HIGH 风险、 escalate 节点） |
+| `--info` | `#5794f2` | 信息/主操作（primary、当前节点选中描边、lit 边） |
+| `--neutral` | `#8e8e8e` | 中性（时间戳、次要文本） |
+
+旧的 cyan `#22d3ee` / blue `#3b82f6` 能量渐变与红/琥珀/绿原色全部下线。
+呼吸类动画统一为 2s 一次、幅度减半（透明度 .78 / 光环 scale 1.15），
+仅保留三处：终态红徽章、AWAITING_APPROVAL 状态、审批节点呼吸——其余发光
+（drop-shadow、box-shadow glow、END 弹跳）全部删除。
+
+### Element Plus 变量桥
+
+`--el-color-primary: #5794f2`（success/warning/danger 分别桥接 `--ok/--warn/--crit`），
+`--el-bg-color: #181b1f`、行 hover `#1c2024`，对话框/抽屉/message 同步去圆角去投影。
+
+### 顶栏（Grafana 形态）
+
+- 左：logo（SVG 圆环）+ 低调产品名 `sentry-agent`（14px，无渐变字、无宣传语副标题）
+  + 环境选择器形态徽章（绿点 + `DEV`，形态对齐 Grafana org picker）。
+- 右：时间范围（`Last 6 hours ▾`）与刷新两个**假控件**（形态对齐 Grafana 顶栏，
+  纯展示无逻辑）+ 分隔线 + 四枚状态徽章（MODE / WATCHMAN / API / 终态）。
+- 48px 定高、`#181b1f` 底、1px 下边框。
+
+### 拓扑图面板化
+
+- SVG 拓扑置于带标题栏的面板内：panel header = 12px 大写标题 + 右侧重放速度
+  控件（`重放速度 | 慢 | 1× | 4×` 分段按钮）。
+- 节点矩形圆角 4px、边 1px `#3a3f46`（面板底上略亮于 `#2c3235`）、
+  选中态（当前节点）描边 `#5794f2` 2px；hover 描边转中性灰。
+- 描边走线动画机制不变（`getTotalLength` + `stroke-dashoffset`），仅颜色收敛。
+
+### 日志/证据区（Datadog log viewer 风格）
+
+- 等宽 12px、行 hover `#1c2024`、时间戳列 `#8e8e8e` 右对齐。
+- 来源徽章改纯文本小写 `[logs]` `[metrics]` `[container]` `[deploy]`
+  （`.tag.src-plain`：无底色无边框），替代旧的彩色胶囊徽章。
+- 时间线竖线转中性 `#2c3235`，节点圆点按语义色（蓝/黄/红/绿）。
+
+### 不在本次范围
+
+`legacy-static/` 保留旧版原样（功能对照基线，不做视觉升级）。
 
 ## 快速开始
 
@@ -28,7 +96,7 @@ frontend/
 ├─ src/
 │  ├─ main.js                   # createApp + Pinia + ElementPlus + tokens.css
 │  ├─ App.vue                   # 装配：顶栏/拓扑卡/三栏/历史表/抽屉
-│  ├─ styles/tokens.css         # 设计令牌：#050b18 网格纹理、cyan→blue 能量、红/琥珀/绿呼吸
+│  ├─ styles/tokens.css         # 设计令牌：Grafana/Datadog 语义色板（见下方设计说明）
 │  ├─ lib/topology.js           # 9 节点/14 边常量（节点名与 IncidentGraphFactory 逐字一致）
 │  ├─ lib/parsers.js            # PlanParser/Hypothesis/verdict 行契约、证据徽章、模式推断（镜像后端）
 │  ├─ api/sse.js                # SSE：fetch+ReadableStream 增量解析（替代 EventSource）
@@ -90,8 +158,8 @@ actions[]/report/outcome/steps/evidenceSeq/hypoSeq/verdictSeq/needsRegen/verifyR
 
 ## 交互一览
 
-1. **⚡ 一键注入故障剧本**：seed-logs → 创建事件 → 详情时间线驱动拓扑重放 →
-   审批面板琥珀呼吸，等值班决策。
+1. **一键注入故障剧本**：seed-logs → 创建事件 → 详情时间线驱动拓扑重放 →
+   审批面板警告黄呼吸，等值班决策。
 2. **＋ 手动创建事件**（el-dialog）：service/summary 可对接其它被守护服务名。
 3. 批准执行 / 否决转人工 → decision 接口 → SSE 实时推进拓扑到 CLOSED/ESCALATED。
 4. 拓扑上方「慢 / 1× / 4×」调整重放节奏；底部历史表点击重放。

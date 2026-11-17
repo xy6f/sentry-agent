@@ -23,7 +23,7 @@ async function create() {
 </script>
 
 <template>
-  <button class="btn primary" :disabled="store.busy" @click="seed">⚡ 一键注入故障剧本</button>
+  <button class="btn primary" :disabled="store.busy" @click="seed">一键注入故障剧本</button>
   <button class="btn ghost" @click="dialogVisible = true">＋ 手动创建事件</button>
 
   <el-dialog v-model="dialogVisible" title="手动创建事件" width="min(460px, 92vw)" append-to-body>
@@ -44,19 +44,14 @@ async function create() {
 
 <style scoped>
 .btn {
-  cursor: pointer; border-radius: 10px; padding: 9px 16px; font-size: 13.5px;
-  color: var(--txt); border: 1px solid var(--line); background: rgba(12,24,44,.8);
-  transition: transform .12s ease, opacity .12s ease, box-shadow .2s ease;
+  cursor: pointer; border-radius: 2px; padding: 7px 14px; font-size: 12.5px;
+  color: var(--txt); border: 1px solid var(--line); background: var(--panel-3);
+  transition: background .15s ease, border-color .15s ease;
 }
-.btn:hover { transform: translateY(-1px); }
-.btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
-.btn.primary {
-  border: none; color: #041018; font-weight: 700;
-  background: linear-gradient(90deg, var(--cyan), var(--blue));
-  box-shadow: 0 4px 18px rgba(34,211,238,.35);
-}
-.btn.primary:hover { box-shadow: 0 6px 24px rgba(34,211,238,.55); }
-.btn.ghost:hover { border-color: rgba(34,211,238,.5); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.primary { border: none; color: #fff; font-weight: 600; background: var(--info); }
+.btn.primary:not(:disabled):hover { background: #3f83e8; }
+.btn.ghost:not(:disabled):hover { border-color: var(--dim); }
 .form { display: grid; gap: 12px; }
 .form label { display: block; font-size: 12px; color: var(--dim); }
 </style>

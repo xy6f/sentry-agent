@@ -22,7 +22,7 @@ const closed = computed(() => snap.value.outcome === 'CLOSED');
 const dead = computed(() => ['ESCALATED', 'FAILED'].includes(snap.value.outcome));
 
 const stateColor = computed(() =>
-  armed.value ? 'var(--amber)' : closed.value ? 'var(--green)' : dead.value ? 'var(--red)' : '');
+  armed.value ? 'var(--warn)' : closed.value ? 'var(--ok)' : dead.value ? 'var(--crit)' : '');
 
 // 非法行丢弃 → API 日志抽屉（镜像后端 log.warn 的可见性）
 const actions = computed(() =>
@@ -75,24 +75,21 @@ const nonePlan = computed(() => !actions.value.length && Boolean(snap.value.plan
 </template>
 
 <style scoped>
-.col-approval { transition: box-shadow .4s; }
-.col-approval.armed {
-  border-color: rgba(251,191,36,.6);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 34px rgba(251,191,36,.16), inset 0 0 40px rgba(251,191,36,.05);
-}
-.state { color: var(--dim); }
-.col-approval.armed .state { animation: amber 1.8s infinite; }
+.col-approval { transition: border-color .3s; }
+.col-approval.armed { border-color: rgba(242,204,12,.55); }
+.state { color: var(--dim); text-transform: uppercase; }
+.col-approval.armed .state { animation: stateBreath 2s ease-in-out infinite; }
 .approval-body { flex: 1; overflow-y: auto; min-height: 100px; }
-.approval-actions { display: flex; gap: 10px; margin-top: 12px; }
+.approval-actions { display: flex; gap: 8px; margin-top: 12px; }
 .btn {
-  cursor: pointer; border-radius: 10px; font-size: 13.5px;
-  color: var(--txt); border: 1px solid var(--line); background: rgba(12,24,44,.8);
-  transition: transform .12s ease, opacity .12s ease, box-shadow .2s ease;
+  cursor: pointer; border-radius: 2px; font-size: 13px;
+  color: var(--txt); border: 1px solid var(--line); background: var(--panel-3);
+  transition: background .15s ease, border-color .15s ease;
 }
 .btn:disabled { opacity: .35; cursor: not-allowed; }
-.btn.big { flex: 1; padding: 13px 10px; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
-.btn.approve { background: linear-gradient(90deg, var(--cyan), var(--blue)); color: #041018; border: none; }
-.btn.approve:not(:disabled) { animation: amber 2s infinite; }
-.btn.veto { border-color: rgba(248,113,113,.5); color: var(--red); }
-.btn.veto:hover:not(:disabled) { background: rgba(248,113,113,.12); }
+.btn.big { flex: 1; padding: 10px; font-weight: 600; letter-spacing: .5px; }
+.btn.approve { background: var(--info); color: #fff; border: none; }
+.btn.approve:not(:disabled):hover { background: #3f83e8; }
+.btn.veto { border-color: rgba(242,73,92,.5); color: var(--crit); background: transparent; }
+.btn.veto:hover:not(:disabled) { background: rgba(242,73,92,.12); }
 </style>

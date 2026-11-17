@@ -46,21 +46,21 @@ function saveBase() {
 <style scoped>
 .drawer-tab {
   position: fixed; left: 18px; bottom: 18px; z-index: 50; cursor: pointer;
-  font: 12px var(--mono); color: var(--dim); background: rgba(10,20,38,.85);
-  border: 1px solid var(--line); border-radius: 10px; padding: 8px 13px;
+  font: 12px var(--mono); color: var(--dim); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 2px; padding: 8px 13px;
 }
-.drawer-tab:hover { color: var(--cyan); border-color: rgba(34,211,238,.5); }
+.drawer-tab:hover { color: var(--txt); border-color: var(--dim); }
 .mono { font-family: var(--mono); }
 .drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
 .api-base { font: 11px var(--mono); color: var(--dim); display: flex; align-items: center; gap: 8px; }
 .api-base input {
-  width: 250px; background: rgba(5,11,24,.8); color: var(--txt);
-  border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font: 11px var(--mono);
+  width: 250px; background: var(--bg); color: var(--txt);
+  border: 1px solid var(--line); border-radius: 2px; padding: 4px 8px; font: 11px var(--mono);
 }
 .btn {
-  cursor: pointer; border-radius: 10px; color: var(--txt);
-  border: 1px solid var(--line); background: rgba(12,24,44,.8);
+  cursor: pointer; border-radius: 2px; color: var(--txt);
+  border: 1px solid var(--line); background: var(--panel-3);
 }
 .btn.tiny { padding: 4px 10px; font-size: 12px; }
-.btn.ghost:hover { border-color: rgba(34,211,238,.5); }
+.btn.ghost:hover { border-color: var(--dim); }
 </style>
