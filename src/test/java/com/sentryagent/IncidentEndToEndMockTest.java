@@ -36,7 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>第二轮 run（审批续跑）：POST decision approve=true 签发一次性令牌 → 幂等重放：
  * 前四节点全部走"跳过"分支（模型零调用），闸口放行 → execute 真实消费令牌
  * restartContainer 得 OK → retrospect 出报告 → 终态 CLOSED。
- * 断言两轮 State 的 outcome/steps/actions/report 演进关系。</p>
+ * 断言两轮 State 的 outcome/steps/actions/report 演进关系（含 totalTokens 600→700：
+ * 每次真实推理 ×mock 单次 100，跳过分支零记账）。</p>
  *
  * <p>附赠否决路径：approve=false 直接终结为 ESCALATED——审批的两种结局都在这张图上。</p>
  *
@@ -82,6 +83,9 @@ class IncidentEndToEndMockTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.evidences",
                         org.hamcrest.Matchers.hasSize(3)))   // 首轮 1 条 + verify 二次取证 2 条
                 .andExpect(MockMvcResultMatchers.jsonPath("$.steps").value(6))
+                // token 用量统计（README 遗留清单第 2 项）：evidence/hypothesize/verify(3次)/plan
+                // 共 6 次模型调用 × mock 单次 100 = 600，对外可见
+                .andExpect(MockMvcResultMatchers.jsonPath("$.totalTokens").value(600))
                 .andReturn();
         long id = extractId(created);
 
@@ -111,6 +115,9 @@ class IncidentEndToEndMockTest {
         assertEquals("CLOSED", second.get(IncidentState.OUTCOME));
         // 重放段又走 7 个节点（4 跳过 + awaitApproval + execute + retrospect），步数 6→13 严格增长
         assertEquals(13, second.get(IncidentState.STEPS));
+        // token 账本同步断言：重放段只有 retrospect 真实发起推理（+100），跳过分支零记账
+        // ——totalTokens 600→700 严格等于"实际推理次数×100"，幂等重放不得虚增
+        assertEquals(700, second.get(IncidentState.TOTAL_TOKENS));
         // 详情接口（含 timeline 合并视图）：第二轮后共 13 条进度
         Map<String, Object> view = incidentService.get(id);
         assertEquals(13, ((List<?>) view.get("timeline")).size());

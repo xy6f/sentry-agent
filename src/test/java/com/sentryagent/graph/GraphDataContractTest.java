@@ -24,7 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>取证分流按轮次：verify 节点以 "补充取证:" 前缀下发的请求必须拿
  *       [补充证据]（含 cpu=95%），不带前缀的首轮请求（哪怕告警正文含
  *       cpu/容器/指标 字样）必须拿 [首轮证据]——前端 inferMode 与回环脚本
- *       都钉在这两个前缀上，契约一断，集成测试立刻红。</li>
+ *       都钉在这两个前缀上，契约一断，集成测试立刻红；</li>
+ *   <li>token 记账契约：mock 每次调用固定记 100（TOKENS_PER_CALL），
+ *       图级断言（TokenUsageAccountingTest 的 600/700）依赖这个单值锚点，
+ *       值一漂那里先红。</li>
  * </ol>
  */
 class GraphDataContractTest {
@@ -36,7 +39,9 @@ class GraphDataContractTest {
     private static final Pattern JS_VERDICT =
             Pattern.compile("^(\\d+)[.、]?\\s*\\|\\s*(不成立|成立)\\s*\\|\\s*(.*)$");
 
-    private final MockDiagnoserGateway gw = new MockDiagnoserGateway();
+    /** mock 网关配独立台账：本测试只验证文本格式契约，token 记账见 TokenLedgerAccumulationTest */
+    private final MockDiagnoserGateway gw =
+            new MockDiagnoserGateway(new com.sentryagent.llm.TokenLedger());
 
     @Test
     @DisplayName("makePlan 输出满足 PlanParser 四段契约；'不成立'输入降级为 NONE 计划")
@@ -121,6 +126,27 @@ class GraphDataContractTest {
         String sup = gw.gatherEvidence("judge-service", "补充取证:核对排队用例耗时分布", 42L, "s");
         assertTrue(sup.startsWith("[补充证据]"),
                 "带 '补充取证:' 前缀的请求即补充轮，必须返回 [补充证据]: " + sup);
+    }
+
+    @Test
+    @DisplayName("token 记账契约：网关每次调用固定记 100，台账按 sessionId 累加")
+    void tokensLedgerAccumulatesPerCall() {
+        // mock 单次调用的固定 token 值是单测断言锚点（TokenUsageAccountingTest 依赖 100/次）：
+        // 同一会话调 3 次 → 台账读数 300；换会话各自成账，互不串账
+        com.sentryagent.llm.TokenLedger ledger = new com.sentryagent.llm.TokenLedger();
+        MockDiagnoserGateway g = new MockDiagnoserGateway(ledger);
+        g.gatherEvidence("judge-service", "alert", 1L, "s-a");
+        g.hypothesize("evidence", "s-a");
+        g.verifyHypotheses("h", "e", "s-a");
+        assertEquals(300L, g.tokensUsed("s-a"), "同会话 3 次调用 = 3 × 100");
+        g.gatherEvidence("judge-service", "alert", 2L, "s-b");
+        assertEquals(100L, g.tokensUsed("s-b"), "异会话独立分账");
+        assertEquals(300L, g.tokensUsed("s-a"), "另一会话记账不得影响前一会话");
+        // 无参/零值防御：未知会话与空参数都不产生账目
+        assertEquals(0L, g.tokensUsed("unknown-session"));
+        ledger.record(null, 100);
+        ledger.record("s-a", 0);
+        assertEquals(300L, g.tokensUsed("s-a"), "非法记账参数（null 会话/零值）必须被忽略");
     }
 
     private static List<String> lines(String text) {

@@ -36,4 +36,12 @@ public interface DiagnoserGateway {
 
     /** 复盘报告 */
     String retrospect(Long incidentId, String transcript, String sessionId);
+
+    /**
+     * 该会话（sessionId = "incident-{id}"）累计消耗的 token 数（input+output 合计口径）。
+     * W3 起图侧把它累加进 IncidentState.TOTAL_TOKENS 通道（事件维度总账），
+     * 并作为 sentry.token-budget-per-incident 预算护栏的读数——确定性兜底
+     * 与步数护栏同款写法：超预算无条件 escalate，排最前保证优先级。
+     */
+    long tokensUsed(String sessionId);
 }

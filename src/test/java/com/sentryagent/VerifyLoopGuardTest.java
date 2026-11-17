@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * round(2) < maxLoops(2) 为假 -> escalate。
  * 断言 verifyRound 恰等于上限、evidenceSeq 换代次数与回环同频（回环真重算而非空转）、
  * 终态 ESCALATED 且无计划无执行——回环耗尽转人工的完整证据链。
+ * （桩网关 tokensUsed 固定返回 200，远低于预算，不触发 token 护栏分支。）
  */
 @SpringBootTest
 @TestPropertySource(properties = "sentry.max-verify-loops=2")
@@ -66,6 +67,13 @@ class VerifyLoopGuardTest {
                 @Override
                 public String retrospect(Long incidentId, String transcript, String sessionId) {
                     return "不该被走到";
+                }
+
+                @Override
+                public long tokensUsed(String sessionId) {
+                    // 桩网关不真实调用模型：固定每会话 200（两节点各 100 同款口径），
+                    // 远低于任何测试预算，不影响本类断言；接口补齐防编译断裂
+                    return 200;
                 }
             };
         }

@@ -2,7 +2,7 @@
 
 **设计目标**：把"值班工程师排障流程"做成一张**带状态、有环、可中断、可审计**的图——证据收集 → 假设生成 → 验证回环（上限熔断）→ 处置计划 → **人工审批（HITL）** → 执行自愈 → 复盘报告。高危操作由框架层一次性令牌硬校验，不信任 LLM 自觉；流程 Checkpoint 持久化，可断点恢复。被守护对象是同组织的 mini-judge 评测平台（见仓库列表）。
 
-**功能速览**：9 节点状态图（条件边回环）、6 个白名单 @Tool（读日志/指标/容器，写操作需审批令牌）、审批面板、SSE 实时进度 + 降级轮询、事件历史重放（倍速）、Watchman 轮询自动建事件（冷却防风暴）；无 LLM Key 时 Mock 网关全流程可演示。
+**功能速览**：9 节点状态图（条件边回环）、6 个白名单 @Tool（读日志/指标/容器，写操作需审批令牌）、审批面板、SSE 实时进度 + 降级轮询、事件历史重放（倍速）、Watchman 轮询自动建事件（冷却防风暴）；token 用量按事件记账（GET 详情 `totalTokens` 可见）并设预算护栏（超限强制 escalate）；无 LLM Key 时 Mock 网关全流程可演示。
 
 **快速开始**：
 
@@ -105,9 +105,11 @@ curl -s -X POST http://localhost:8084/api/incidents/2/decision \
 ```
 
 覆盖面：PlanParser 合法/非法行与 NONE 语义；verifyRouter/approvalRouter 全分支
-（含 steps 护栏优先级、"不成立"子串陷阱回归）；令牌护栏（REFUSED/一次性/事件绑定）；
-max-steps 图级熔断；seed-logs→fetchServiceLogs 真实文件闭环；
-端到端 create→AWAITING_APPROVAL→approve→CLOSED 两轮 run 状态断言。
+（含 steps 护栏优先级、token 预算护栏临界值、'不成立'子串陷阱回归）；令牌护栏
+（REFUSED/一次性/事件绑定）；max-steps 图级熔断与 token-budget 图级熔断；
+seed-logs→fetchServiceLogs 真实文件闭环；token 记账契约（mock 每调用固定 100、
+会话分账互不串）；端到端 create→AWAITING_APPROVAL→approve→CLOSED 两轮 run
+状态断言（含 totalTokens 600→700 严格累加、幂等重放零虚增）。
 
 ## 3. 状态图与关键类速查
 
@@ -121,8 +123,9 @@ START → evidence → hypothesize → verify ─┬─ 成立 ─────�
 |---|---|
 | 图拓扑/节点函数 | `graph/IncidentGraphFactory` |
 | 类型化状态通道（appender/累加/版本链） | `graph/IncidentState` |
-| 条件边纯逻辑（单测对象） | `graph/IncidentRouters` |
+| 条件边纯逻辑（单测对象，含双护栏） | `graph/IncidentRouters` |
 | LLM 出口收口 + mock 剧本 | `llm/DiagnoserGateway` 与 `llm/MockDiagnoserGateway` |
+| token 用量台账（会话分账） | `llm/TokenLedger`（生产采集点见 `ProdDiagnoserGateway#usageListener`） |
 | 6 个 @Tool（读真实化/写令牌护栏） | `tool/EvidenceTools`、`tool/ApprovalRegistry` |
 | 事件编排/幂等重放 | `service/IncidentService` |
 | 时间线 + SSE | `service/NodeProgressListener`、`controller/IncidentController#stream` |
@@ -136,6 +139,7 @@ START → evidence → hypothesize → verify ─┬─ 成立 ─────�
 | `sentry.llm.enabled` | `false` | 网关总开关：false=Mock 剧本、true=真实 LLM |
 | `sentry.max-verify-loops` | 3 | 假设-验证回环圈数上限 |
 | `sentry.max-steps` | 24 | 全局步数护栏，超限强制 escalate |
+| `sentry.token-budget-per-incident` | 50000 | 单事件 token 预算护栏，verify 后 totalTokens≥预算强制 escalate（可用环境变量 `SENTRY_TOKEN_BUDGET_PER_INCIDENT` 覆盖） |
 | `sentry.logs-dir` / `logs-tail-lines` | `./logs` / 50 | fetchServiceLogs 真实文件参数 |
 | `sentry.watchman.enabled` | `false` | 自动巡检开关（阈值/冷却键见 Watchman 注释） |
 | `sentry.dev-api.enabled` | `true` | seed-logs 等 dev 端点；生产置 false 摘除 |
@@ -168,6 +172,9 @@ START → evidence → hypothesize → verify ─┬─ 成立 ─────�
 ## 6. 已知遗留（如实声明）
 
 - Nacos 未接入：配置走本地 application.yml（与计划书无关紧要的差距）。
-- token 用量统计（t_incident.total_tokens）未接：LangChain4j 响应元数据可取，留 W3。
+- token 用量统计已接内存台账（README 原遗留第 2 项，W3 补齐）：`llm/TokenLedger`
+  按 sessionId 分账、图节点两读数法写入 `totalTokens` 累加通道、GET 详情可见、
+  预算护栏可 escalate；生产落库时把 `IncidentService` 内存快照换 t_incident
+  （字段 `total_tokens` 已对齐）即可，采集口径不变。
 - getMetrics 依赖 mini-judge 在线；不在时返回"查询失败"降级文本，图不中断。
 - 评测方案（计划书第 8 章 10 剧本×对照基线）不在本轮范围。

@@ -14,8 +14,11 @@ public final class IncidentRouters {
     /**
      * verify 之后的三/四分支路由：
      * <ol>
-     *   <li>steps 已达 sentry.max-steps：无论判定如何，强制 escalate——
-     *       全局步数护栏（计划书"节点总数×2 硬上限"的落地），排最前保证优先级；</li>
+     *   <li>steps 已达 sentry.max-steps 或 token 用量已超 sentry.token-budget-per-incident：
+     *       无论判定如何，强制 escalate——两道确定性兜底（步数护栏 + 成本护栏，
+     *       计划书 3.2"确定性兜底优先于模型行为"），排最前保证优先级。成本护栏读
+     *       状态里的 totalTokens 累加通道（网关每次推理后写入增量），语义与
+     *       "步数超限"完全同款：宁可转人工，不让账单失控；</li>
      *   <li>判定含"成立"：去 plan。注意必须先剔除"不成立"再找"成立"——
      *       否则 "1 | 不成立" 这种文本会因包含子串"成立"被误放行（真实踩过的坑）；</li>
      *   <li>不成立且回环未超 sentry.max-verify-loops：moreEvidence，回 evidence
@@ -23,8 +26,11 @@ public final class IncidentRouters {
      *   <li>圈数耗尽：escalate 转人工。</li>
      * </ol>
      */
-    public static String verifyRouter(IncidentState s, int maxLoops, int maxSteps) {
+    public static String verifyRouter(IncidentState s, int maxLoops, int maxSteps, int tokenBudget) {
         if (s.steps() >= maxSteps) {
+            return "escalate";
+        }
+        if (s.totalTokens() >= tokenBudget) {
             return "escalate";
         }
         String verdictWithoutNegative = s.verdict().replace("不成立", "");

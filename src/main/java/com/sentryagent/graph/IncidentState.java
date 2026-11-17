@@ -57,6 +57,13 @@ public class IncidentState extends AgentState {
     public static final String OUTCOME       = "outcome";
     /** 累计节点执行步数（累加通道，每节点 +1），sentry.max-steps 护栏读它 */
     public static final String STEPS         = "steps";
+    /**
+     * 累计 token 消耗（累加通道，单位：token，input+output 合计口径）。
+     * 图节点每发起一次推理就从网关读增量记入（mock=每节点 100，生产=listener 实测），
+     * verifyRouter 用它对比 sentry.token-budget-per-incident——超预算无条件 escalate。
+     * W3 补齐 README 遗留清单第 2 项（接口名 totalTokens 与计划书 t_incident.total_tokens 对齐）。
+     */
+    public static final String TOTAL_TOKENS  = "totalTokens";
     /** 证据集代数：evidence 节点每重新取证 +1 */
     public static final String EVIDENCE_SEQ  = "evidenceSeq";
     /** 假设基于哪一代证据生成 */
@@ -78,7 +85,9 @@ public class IncidentState extends AgentState {
             NEEDS_REGEN, Channels.base(() -> Boolean.FALSE),
             // 累加 reducer：每次写入视为增量。(old,new) 中 old 为 null 时框架先取默认值 0
             // ——已用 javap 反编译 1.9.3 的 Channel.update 字节码确认该语义
-            STEPS, Channels.base((acc, inc) -> ((Integer) acc) + ((Integer) inc), () -> 0));
+            STEPS, Channels.base((acc, inc) -> ((Integer) acc) + ((Integer) inc), () -> 0),
+            // token 用量同款累加通道：节点写入"本次新增的 token 数"，通道负责求和
+            TOTAL_TOKENS, Channels.base((acc, inc) -> ((Integer) acc) + ((Integer) inc), () -> 0));
 
     public IncidentState(Map<String, Object> initData) {
         super(initData);
@@ -98,6 +107,7 @@ public class IncidentState extends AgentState {
     public String report()     { return this.<String>value(REPORT).orElse(""); }
     public String outcome()    { return this.<String>value(OUTCOME).orElse("RUNNING"); }
     public int steps()         { return this.<Integer>value(STEPS).orElse(0); }
+    public int totalTokens()   { return this.<Integer>value(TOTAL_TOKENS).orElse(0); }
     public int evidenceSeq()   { return this.<Integer>value(EVIDENCE_SEQ).orElse(0); }
     public int hypoSeq()       { return this.<Integer>value(HYPO_SEQ).orElse(0); }
     public int verdictSeq()    { return this.<Integer>value(VERDICT_SEQ).orElse(0); }

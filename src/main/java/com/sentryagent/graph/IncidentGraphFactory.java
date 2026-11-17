@@ -57,10 +57,18 @@ public class IncidentGraphFactory {
             EvidenceTools tools,
             NodeProgressListener progress,
             @Value("${sentry.max-verify-loops}") int maxLoops,
-            @Value("${sentry.max-steps}") int maxSteps) throws GraphStateException {
+            @Value("${sentry.max-steps}") int maxSteps,
+            @Value("${sentry.token-budget-per-incident}") int tokenBudget) throws GraphStateException {
 
         // ── 节点：每个节点"只做一件事 + 返回状态增量"。STEPS 恒 +1（全局步数护栏的计数源）；
         //    是否跳过推理由版本链决定，而非简单的"字段非空"──
+        // token 增量采用两读数法（README 遗留清单第 2 项的落地）：节点入口读一次网关台账
+        // （tokensUsed），推理后再读一次，差值作为 TOTAL_TOKENS 累加通道的增量写入。
+        // 这个写法保证三类语义都成立：mock 网关每调用一次记 100（单测断言锚点）、
+        // 生产网关由 ChatModelListener 实测记账（tokensUsed 读的是同一份台账）、
+        // 审批重放走跳过分支时差值根本不写（totalTokens 不因幂等重放虚增，
+        // 与 STEPS 的重放语义对齐）。发起推理的 5 类节点全接账：evidence/hypothesize/
+        // verify/plan/retrospect——verify 节点内部含"二次取证 + 判定"两次推理，一次结清。
 
         NodeAction<IncidentState> evidenceImpl = s -> {
             // 跳过条件两票都否才跳：首轮证据已收(evidences 非空) 且 无人宣告证据失效
@@ -68,13 +76,15 @@ public class IncidentGraphFactory {
             if (!s.evidences().isEmpty() && !s.needsRegen()) {
                 return Map.of(IncidentState.STEPS, 1);
             }
-            String sessionId = "incident-" + s.incidentId();
+            String sessionId = sessionId(s);
+            long before = gateway.tokensUsed(sessionId);
             String evidence = gateway.gatherEvidence(
                     s.service(), s.alert(), s.incidentId(), sessionId);
             return Map.of(IncidentState.EVIDENCES, List.of(evidence),
                           IncidentState.EVIDENCE_SEQ, s.evidenceSeq() + 1,
                           IncidentState.NEEDS_REGEN, Boolean.FALSE,
-                          IncidentState.STEPS, 1);
+                          IncidentState.STEPS, 1,
+                          IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId) - before));
         };
 
         NodeAction<IncidentState> hypothesizeImpl = s -> {
@@ -82,11 +92,14 @@ public class IncidentGraphFactory {
             if (!s.hypotheses().isEmpty() && s.hypoSeq() >= s.evidenceSeq()) {
                 return Map.of(IncidentState.STEPS, 1);
             }
+            String sessionId = "incident-" + s.incidentId();
+            long before = gateway.tokensUsed(sessionId);
             String joined = String.join("\n---\n", s.evidences());
             return Map.of(IncidentState.HYPOTHESES,
-                          gateway.hypothesize(joined, "incident-" + s.incidentId()),
+                          gateway.hypothesize(joined, sessionId),
                           IncidentState.HYPO_SEQ, s.evidenceSeq(),
-                          IncidentState.STEPS, 1);
+                          IncidentState.STEPS, 1,
+                          IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId) - before));
         };
 
         // W2 核心升级：验证方法驱动二次取证（计划书 3.1"按假设再取证"的代码化）
@@ -96,6 +109,9 @@ public class IncidentGraphFactory {
                 return Map.of(IncidentState.STEPS, 1);
             }
             String sessionId = "incident-" + s.incidentId();
+            // 两读数法结账：本节点内含"二次取证×N + 判定"多次推理，入口/出口各读一次
+            // 台账，差值一并记入 TOTAL_TOKENS（mock 下即 (N+1)×100）
+            long before = gateway.tokensUsed(sessionId);
             // 抽出每条假设的"验证方法"，作为参数逐条再调一次取证。
             // mock 网关下这就是第二次(及以上) gatherEvidence，返回差异化的补充证据；
             // 生产网关下同一请求交给 LLM 的取证工具自主循环
@@ -111,18 +127,21 @@ public class IncidentGraphFactory {
                           IncidentState.VERDICT, verdict,
                           IncidentState.VERIFY_ROUND, s.round() + 1,
                           IncidentState.VERDICT_SEQ, s.hypoSeq(),
-                          // 不成立：宣告证据集失效，驱动回环重新取证（路由器仍受圈数/步数双上限约束）
+                          // 不成立：宣告证据集失效，驱动回环重新取证（路由器仍受圈数/步数/预算三上限约束）
                           IncidentState.NEEDS_REGEN, !established,
-                          IncidentState.STEPS, 1);
+                          IncidentState.STEPS, 1,
+                          IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId) - before));
         };
 
         NodeAction<IncidentState> planImpl = s -> {
             if (!s.plan().isEmpty()) {
                 return Map.of(IncidentState.STEPS, 1);
             }
+            long before = gateway.tokensUsed(sessionId(s));
             return Map.of(IncidentState.PLAN,
-                          gateway.makePlan(s.verdict(), "incident-" + s.incidentId()),
-                          IncidentState.STEPS, 1);
+                          gateway.makePlan(s.verdict(), sessionId(s)),
+                          IncidentState.STEPS, 1,
+                          IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId(s)) - before));
         };
 
         // 审批闸口：只看"状态里有没有已批准的令牌"。节点自己不签发令牌——
@@ -167,18 +186,20 @@ public class IncidentGraphFactory {
             String transcript = "告警:" + s.alert() + "\n证据:" + String.join(" | ", s.evidences())
                     + "\n假设:" + s.hypotheses() + "\n判定:" + s.verdict()
                     + "\n计划:" + s.plan() + "\n动作:" + String.join(" | ", s.actions())
-                    + "\n步数:" + s.steps();
-            String report = gateway.retrospect(s.incidentId(), transcript,
-                    "incident-" + s.incidentId());
+                    + "\n步数:" + s.steps() + "\ntoken:" + s.totalTokens();
+            long before = gateway.tokensUsed(sessionId(s));
+            String report = gateway.retrospect(s.incidentId(), transcript, sessionId(s));
             return Map.of(IncidentState.REPORT, report,
                           IncidentState.OUTCOME, "CLOSED",
-                          IncidentState.STEPS, 1);
+                          IncidentState.STEPS, 1,
+                          IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId(s)) - before));
         };
 
         NodeAction<IncidentState> escalateImpl = s ->
                 Map.of(IncidentState.OUTCOME, "ESCALATED",
-                       IncidentState.REPORT, "自动诊断未收敛（回环耗尽、步数超限或方案不可执行），已转人工。"
-                               + "累计步数=" + s.steps() + "，回环=" + s.round(),
+                       IncidentState.REPORT, "自动诊断未收敛（回环耗尽、步数超限、token 超预算或方案不可执行），已转人工。"
+                               + "累计步数=" + s.steps() + "，回环=" + s.round()
+                               + "，累计token=" + s.totalTokens(),
                        IncidentState.STEPS, 1);
 
         // ── 条件边路由：决策逻辑抽到纯类 IncidentRouters（脱离 Spring 逐分支单测）──
@@ -200,7 +221,7 @@ public class IncidentGraphFactory {
                 // 关键回环：verify 不成立且未超限 -> 回到 evidence。二次取证已让新证据进入状态，
                 // 这一圈重走 hypothesize 会看到增量证据重生成假设——回环有真实信息量（面试答案）
                 .addConditionalEdges("verify",
-                        edge_async(s -> IncidentRouters.verifyRouter(s, maxLoops, maxSteps)),
+                        edge_async(s -> IncidentRouters.verifyRouter(s, maxLoops, maxSteps, tokenBudget)),
                         Map.of("plan", "plan",
                                "moreEvidence", "evidence",
                                "escalate", "escalate"))
@@ -234,6 +255,11 @@ public class IncidentGraphFactory {
             progress.onNodeComplete(state.incidentId(), name, out);
             return out;
         };
+    }
+
+    /** 事件图会话的台账键（= "incident-{id}"，网关 tokensUsed 的分账口径） */
+    private static String sessionId(IncidentState s) {
+        return "incident-" + s.incidentId();
     }
 
     /** 从 SCALE 动作的目标文本里取第一个整数作为 worker 数（如 "worker 4->6" -> 6；取不到默认 1） */

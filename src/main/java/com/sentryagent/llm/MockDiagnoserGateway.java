@@ -27,6 +27,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class MockDiagnoserGateway implements DiagnoserGateway {
 
+    /**
+     * mock 单次调用的固定 token 消耗（每节点 100）：台账累加的单测锚点——
+     * 图跑完 totalTokens 恰等于"发起推理的节点数 × 100"（跳过分支不记账），
+     * 断言写死这个数即可发现"该计数的没计 / 不该计的计了"两类回归。
+     */
+    static final long TOKENS_PER_CALL = 100L;
+
+    /** 分账台账：mock 与 prod 共用同一份口径（见 {@link TokenLedger}） */
+    private final TokenLedger ledger;
+
+    /** LlmConfig 装配时注入共享台账（与 Prod 网关同源，口径不分家） */
+    public MockDiagnoserGateway(TokenLedger ledger) {
+        this.ledger = ledger;
+    }
+
     /** 首轮证据：日志关键字与"无日志则无痕迹"的真实世界一致 */
     private static final String FIRST_EVIDENCE =
             "[首轮证据] logs[%s]: 20:1x 起持续出现 \"timeout killed\"; "
@@ -56,16 +71,19 @@ public class MockDiagnoserGateway implements DiagnoserGateway {
         String a = alert == null ? "" : alert;
         if (a.startsWith(SUPPLEMENT_PREFIX)) {
             // 补充轮：用 alert（"补充取证:"+验证方法）做差异化标记，多条补充证据彼此不同
+            ledger.record(sessionId, TOKENS_PER_CALL);
             return String.format(SECOND_EVIDENCE, a, service);
         }
         // 首轮：告警正文无论含什么字样（如 seed 摘要里的"多容器 timeout killed"）
         // 都返回带 [首轮证据] 前缀的证据——前端 inferMode 靠该前缀在 AWAITING 期识别 mock
+        ledger.record(sessionId, TOKENS_PER_CALL);
         return String.format(FIRST_EVIDENCE, service, service);
     }
 
     @Override
     public String hypothesize(String evidence, String sessionId) {
         // 每行 "假设 | 验证方法"——验证方法含 cpu/容器 关键词，触发二次证据分支
+        ledger.record(sessionId, TOKENS_PER_CALL);
         return "1. 评测 worker 池饱和，容器被 docker timeout killed | 核对 cpu 与容器数指标\n"
                 + "2. 恶意用例死循环打满队列 | 查看排队用例耗时分布，核对 cpu 指标";
     }
@@ -73,6 +91,7 @@ public class MockDiagnoserGateway implements DiagnoserGateway {
     @Override
     public String verifyHypotheses(String hypotheses, String moreEvidence, String sessionId) {
         String ev = moreEvidence == null ? "" : moreEvidence;
+        ledger.record(sessionId, TOKENS_PER_CALL);
         if (ev.contains("cpu=95%")) {
             return "1 | 成立 | cpu=95% 且运行容器数超池上限，与 worker 池饱和预期一致\n"
                     + "2 | 不成立 | 补充证据未见 TLE 用例风暴迹象";
@@ -83,6 +102,7 @@ public class MockDiagnoserGateway implements DiagnoserGateway {
 
     @Override
     public String makePlan(String rootCause, String sessionId) {
+        ledger.record(sessionId, TOKENS_PER_CALL);
         // 修复根因（全量测试 G 抓到）："不成立" 包含子串 "成立"，原判定
         // rootCause.contains("成立") 会把全"不成立"的判定误读成有根因成立、
         // 输出 RESTART 计划。图主链上 verifyRouter 已先剔除"不成立"所以未爆雷，
@@ -96,9 +116,16 @@ public class MockDiagnoserGateway implements DiagnoserGateway {
 
     @Override
     public String retrospect(Long incidentId, String transcript, String sessionId) {
+        ledger.record(sessionId, TOKENS_PER_CALL);
         int lines = transcript == null ? 0 : transcript.split("\n").length;
         return "【复盘报告 · 事件#" + incidentId + "（mock）】根因：评测 worker 池饱和；"
                 + "处置：经审批重启 judge-worker-1；过程记录 " + lines
                 + " 行 / " + (transcript == null ? 0 : transcript.length()) + " 字符已归档。";
+    }
+
+    /** mock 台账读数：每次调用固定 {@link #TOKENS_PER_CALL}，累计即调用次数 × 100 */
+    @Override
+    public long tokensUsed(String sessionId) {
+        return ledger.used(sessionId);
     }
 }
