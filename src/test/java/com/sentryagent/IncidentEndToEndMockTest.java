@@ -107,7 +107,7 @@ class IncidentEndToEndMockTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.outcome").value("CLOSED"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.actions[0]",
                         org.hamcrest.Matchers.containsString(
-                                "OK: container judge-worker-1 restart issued")))
+                                "MOCK: docker 未启用（sentry.docker.enabled=false），judge-worker-1 未实际重启")))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.report",
                         org.hamcrest.Matchers.containsString("复盘报告")));
 

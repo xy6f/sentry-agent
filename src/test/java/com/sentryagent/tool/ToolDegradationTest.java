@@ -20,7 +20,7 @@ class ToolDegradationTest {
 
     @BeforeEach
     void setUp() {
-        tools = new EvidenceTools(new ApprovalRegistry());
+        tools = new EvidenceTools(new ApprovalRegistry(), new DockerExecutor());
         // 端口 1 恒不可达：制造"被监控系统没起"的真实网络故障形态
         ReflectionTestUtils.setField(tools, "targetBaseUrl", "http://127.0.0.1:1");
         ReflectionTestUtils.setField(tools, "logsDir", "./target/unused-logs");

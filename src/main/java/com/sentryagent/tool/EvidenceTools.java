@@ -53,6 +53,8 @@ public class EvidenceTools {
     private int logsTailLines;
 
     private final ApprovalRegistry approvalRegistry;
+    /** Phase 3：真实 Docker 自愈执行器（开关+白名单在内部，未启用时返回 MOCK 文案） */
+    private final DockerExecutor dockerExecutor;
 
     /** 读：目标服务状态指标（judge-service 的 /api/judge/status，队列深度/worker 忙闲） */
     @Tool("查询被监控服务的运行指标：排队深度、评测中任务数、worker 忙闲。参数 service 为服务名")
@@ -126,25 +128,30 @@ public class EvidenceTools {
         return "containers[" + sanitize(service) + "]: 8 running, 2 restarting（超出 worker 池上限 6）";
     }
 
-    /** 写（高危）：重启容器——必须携带审批令牌，令牌一次性 */
+    /** 写（高危）：重启容器——必须携带审批令牌，令牌一次性；docker 启用时真实执行 */
     @Tool("重启指定容器。危险操作：必须提供审批令牌 approvalId（由值班人员批准后颁发），否则拒绝执行")
     public String restartContainer(String containerId, String approvalId, Long incidentId) {
         if (!approvalRegistry.consume(approvalId, incidentId)) {
             log.warn("restart refused: invalid approval token for incident {}", incidentId);
             return "REFUSED: 该操作未经人工审批（令牌无效或已使用），不得重试";
         }
-        // TODO(W3): 经白名单校验后执行 docker restart；只允许操作带 label=sentry-managed 的容器
-        return "OK: container " + containerId + " restart issued";
+        // Phase 3（清言方案三）：TODO(W3) 兑现——真实 docker restart，三层安全：
+        // HITL 令牌（上面已消费）→ sentry.docker.enabled 开关 → sentry-managed 白名单预检
+        DockerExecutor.ExecResult r = dockerExecutor.restart(containerId, approvalId);
+        log.info("restart container={} incident={} ok={}", containerId, incidentId, r.ok());
+        return r.output();
     }
 
-    /** 写（高危）：扩容 */
+    /** 写（高危）：扩容——令牌一次性；docker 启用时真实 compose scale */
     @Tool("扩容服务 worker 数。危险操作：必须提供审批令牌 approvalId，否则拒绝执行")
     public String scaleService(String service, int workerCount, String approvalId, Long incidentId) {
         if (!approvalRegistry.consume(approvalId, incidentId)) {
             return "REFUSED: 该操作未经人工审批（令牌无效或已使用），不得重试";
         }
-        // TODO(W3): 通过 compose/env 配置生效而非直接动运行时——演进项记录在此
-        return "OK: scale " + service + " workers -> " + workerCount;
+        DockerExecutor.ExecResult r = dockerExecutor.scale(service, workerCount, approvalId);
+        log.info("scale service={} workers={} incident={} ok={}",
+                service, workerCount, incidentId, r.ok());
+        return r.output();
     }
 
     /**

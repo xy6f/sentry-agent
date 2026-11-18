@@ -22,7 +22,7 @@ class ApprovalTokenGuardTest {
     @BeforeEach
     void setUp() {
         registry = new ApprovalRegistry();
-        tools = new EvidenceTools(registry);
+        tools = new EvidenceTools(registry, new DockerExecutor());
         // 本测试不触网：targetBaseUrl/logsDir 给占位值即可，写工具不读它们
         ReflectionTestUtils.setField(tools, "targetBaseUrl", "http://127.0.0.1:1");
         ReflectionTestUtils.setField(tools, "logsDir", "./target/unused-logs");
@@ -44,7 +44,8 @@ class ApprovalTokenGuardTest {
     void tokenIsOneShot() {
         String token = registry.issue(7L);
         String first = tools.restartContainer("judge-worker-1", token, 7L);
-        assertTrue(first.startsWith("OK:"), "首用应放行: " + first);
+        assertTrue(first.startsWith("MOCK:") && first.contains("未实际重启"),
+                "Phase3 后默认 enabled=false：令牌有效=走 Mock 通道并如实声明未执行: " + first);
         String second = tools.restartContainer("judge-worker-1", token, 7L);
         assertTrue(second.startsWith("REFUSED"), "重放必须拒绝: " + second);
     }
@@ -72,8 +73,11 @@ class ApprovalTokenGuardTest {
     void scaleSharesGuard() {
         assertTrue(tools.scaleService("judge-service", 6, null, 1L).startsWith("REFUSED"));
         String token = registry.issue(3L);
-        assertEquals("OK: scale judge-service workers -> 6",
-                tools.scaleService("judge-service", 6, token, 3L));
+        // Phase3 后默认 enabled=false：令牌有效 = 走 Mock 通道并如实声明未执行
+        String second = tools.scaleService("judge-service", 6, token, 3L);
+        assertTrue(second.startsWith("MOCK:") && second.contains("未实际扩容"),
+                "Phase3 默认 Mock 通道如实声明: " + second);
+        // 令牌一次性：同令牌第二次扩容必须 REFUSED
         assertTrue(tools.scaleService("judge-service", 6, token, 3L).startsWith("REFUSED"));
     }
 }
