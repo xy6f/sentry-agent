@@ -37,6 +37,8 @@ public class IncidentService {
     private final CompiledGraph<IncidentState> graph;
     private final ApprovalRegistry approvalRegistry;
     private final NodeProgressListener progressListener;
+    /** 通知监听器（可选依赖：notify 关闭时为 null，跃迁点判空跳过） */
+    private final com.sentryagent.notify.NotificationListener notificationListener;
 
     /** 内存事件仓（W2 换 MySQL t_incident，接口不变） */
     private final Map<Long, Map<String, Object>> incidents = new ConcurrentHashMap<>();
@@ -48,6 +50,7 @@ public class IncidentService {
         input.put(IncidentState.INCIDENT_ID, id);
         input.put(IncidentState.SERVICE, service);
         input.put(IncidentState.ALERT, alert);
+        notify(id, "CREATED");
         return run(id, input);
     }
 
@@ -81,9 +84,22 @@ public class IncidentService {
             rejected.put(IncidentState.OUTCOME, "ESCALATED");
             rejected.put(IncidentState.REPORT, "人工否决自动处置，转人工处置");
             incidents.put(incidentId, rejected);
+            notify(incidentId, "ESCALATED");
             return incidents.get(incidentId);
         }
-        return run(incidentId, input);
+        Map<String, Object> result = run(incidentId, input);
+        // 通知 AWAITING_APPROVAL（run 返回时若状态停在闸口）或 CLOSED（重放跑完）
+        notify(incidentId, "AWAITING_APPROVAL".equals(
+                String.valueOf(result.getOrDefault(IncidentState.OUTCOME, "")))
+                ? "AWAITING_APPROVAL" : "CLOSED");
+        return result;
+    }
+
+    /** 通知出口：notify 总开关关闭时监听器为 null，直接跳过（零开销） */
+    private void notify(long incidentId, String transition) {
+        if (notificationListener != null) {
+            notificationListener.onTransition(incidentId, transition);
+        }
     }
 
     /**
