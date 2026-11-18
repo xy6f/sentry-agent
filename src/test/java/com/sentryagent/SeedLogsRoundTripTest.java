@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 日志目录指到 target/ 下，测试跑完自清洁，不污染工作区 ./logs。
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sentry.logs-dir=./target/test-seed-logs")
 class SeedLogsRoundTripTest {

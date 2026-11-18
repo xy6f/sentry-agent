@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * approve 与 reject 两条分支各测一个终态（CLOSED 再批准、ESCALATED 再否决）。</p>
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 class IncidentTerminalDecisionIdempotencyTest {
 
     @Autowired

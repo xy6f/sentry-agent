@@ -1,7 +1,9 @@
 package com.sentryagent;
 
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -14,9 +16,14 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * <p>@EnableScheduling：为 Watchman（自动巡检告警入口，计划书 3.1 Must 第一条）
  * 激活 @Scheduled 轮询。默认实现 sentry.watchman.enabled=false 不装配，
  * 开调度器本身零成本；演示手动链路（create 接口）不受影响。</p>
+ *
+ * <p>@EnableAsync：Phase 1 通知与 Phase 4 落库的旁路（@Async）——旁路系统
+ * （飞书/短信/MySQL）抖一下绝不能卡住诊断状态机，这是两条纪律的公共开关。</p>
  */
 @SpringBootApplication
 @EnableScheduling
+@EnableAsync
+@MapperScan("com.sentryagent.persist")   // Phase 4：事件落库 Mapper（sentry.persist 包）
 public class SentryAgentApplication {
 
     public static void main(String[] args) {

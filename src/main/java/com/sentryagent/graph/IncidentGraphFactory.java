@@ -56,6 +56,7 @@ public class IncidentGraphFactory {
             DiagnoserGateway gateway,
             EvidenceTools tools,
             NodeProgressListener progress,
+            org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentPersistence> persistenceProvider,
             @Value("${sentry.max-verify-loops}") int maxLoops,
             @Value("${sentry.max-steps}") int maxSteps,
             @Value("${sentry.token-budget-per-incident}") int tokenBudget) throws GraphStateException {
@@ -205,9 +206,9 @@ public class IncidentGraphFactory {
         // ── 条件边路由：决策逻辑抽到纯类 IncidentRouters（脱离 Spring 逐分支单测）──
         return new StateGraph<>(IncidentState.SCHEMA, IncidentState::new)
 
-                .addNode("evidence",      node_async(timed("evidence", progress, evidenceImpl)))
-                .addNode("hypothesize",   node_async(timed("hypothesize", progress, hypothesizeImpl)))
-                .addNode("verify",        node_async(timed("verify", progress, verifyImpl)))
+                .addNode("evidence",      node_async(state -> { Map<String, Object> out = timed("evidence", progress, evidenceImpl).apply(state); mirrorStep(persistenceProvider, state.incidentId(), "evidence", out); return out; }))
+                .addNode("hypothesize",   node_async(state -> { Map<String, Object> out = timed("hypothesize", progress, hypothesizeImpl).apply(state); mirrorStep(persistenceProvider, state.incidentId(), "hypothesize", out); return out; }))
+                .addNode("verify",        node_async(state -> { Map<String, Object> out = timed("verify", progress, verifyImpl).apply(state); mirrorStep(persistenceProvider, state.incidentId(), "verify", out); return out; }))
                 .addNode("plan",          node_async(timed("plan", progress, planImpl)))
                 .addNode("awaitApproval", node_async(timed("awaitApproval", progress, awaitApprovalImpl)))
                 .addNode("pending",       node_async(timed("pending", progress, pendingImpl)))
@@ -255,6 +256,19 @@ public class IncidentGraphFactory {
             progress.onNodeComplete(state.incidentId(), name, out);
             return out;
         };
+    }
+
+    /**
+     * Phase 4 落库镜像 helper：persistence 未启用时 provider 无 bean，判空跳过。
+     * 独立静态方法（不是塞进 timed）因为 provider 是 Bean 方法参数而非静态可达。
+     */
+    private static void mirrorStep(
+            org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentPersistence> persistenceProvider,
+            long incidentId, String node, Map<String, Object> out) {
+        com.sentryagent.persist.IncidentPersistence p = persistenceProvider.getIfAvailable();
+        if (p != null) {
+            p.onNodeComplete(incidentId, node, out);
+        }
     }
 
     /** 事件图会话的台账键（= "incident-{id}"，网关 tokensUsed 的分账口径） */

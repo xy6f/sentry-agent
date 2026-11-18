@@ -1,0 +1,71 @@
+# sentry-agent 生产部署（精简 compose：sentry + MySQL + Redis + Nginx）
+# 完整监控栈（Prometheus/Grafana）的接入示例见 docs/DEPLOY.md 第 6 节。
+#
+# 启动：docker compose up -d
+# 注意：
+# 1. 前端 dist 需先 npm run build 后放到 ./nginx-dist（Nginx 托管）
+# 2. SSE 反向代理必须关 proxy_buffering（nginx.conf 已配，否则前端进度卡死）
+# 3. 飞书卡片按钮回调要求公网 HTTPS——回调地址填 https://你的域名/api/incidents/{id}/decision
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set-in-.env}
+      MYSQL_DATABASE: sentry_agent
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    # Phase 后续：checkpoint 换 Redis 的落点（IncidentGraphFactory 注释已钉演进路线）
+
+  sentry-agent:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/sentry_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      # LLM（DeepSeek 等 OpenAI 兼容网关均可）
+      SENTRY_LLM_ENABLED: ${SENTRY_LLM_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      # Phase 1 通知：配 webhook 后开 true
+      SENTRY_NOTIFY_ENABLED: ${SENTRY_NOTIFY_ENABLED:-false}
+      SENTRY_FEISHU_ENABLED: ${SENTRY_FEISHU_ENABLED:-false}
+      SENTRY_FEISHU_WEBHOOK: ${SENTRY_FEISHU_WEBHOOK:-}
+      SENTRY_WECOM_ENABLED: ${SENTRY_WECOM_ENABLED:-false}
+      SENTRY_WECOM_WEBHOOK: ${SENTRY_WECOM_WEBHOOK:-}
+      # Phase 3 真自愈：宿主机的 docker.sock 以只读+白名单方式挂入
+      # ⚠️ 直接挂 /var/run/docker.sock 等价宿主机 root——生产用 socket-proxy 限制端点
+      # （见 docs/DEPLOY.md 第 5 节），这里演示从简，sentry-managed label 白名单仍生效
+      SENTRY_DOCKER_ENABLED: ${SENTRY_DOCKER_ENABLED:-false}
+      SENTRY_WATCHMAN_ENABLED: ${SENTRY_WATCHMAN_ENABLED:-false}
+      SENTRY_LOGS_DIR: /sentry-logs
+    volumes:
+      - ./logs:/sentry-logs:ro          # 被守护项目的日志目录（只读）
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8084:8084"
+
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - sentry-agent
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  mysql-data:
+  redis-data:

@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 和 IncidentRoutersTest 的纯函数分支断言互为两层保险。
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sentry.max-steps=2")
 class MaxStepsGuardTest {

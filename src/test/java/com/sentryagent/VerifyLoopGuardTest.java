@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （桩网关 tokensUsed 固定返回 200，远低于预算，不触发 token 护栏分支。）
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 @TestPropertySource(properties = "sentry.max-verify-loops=2")
 @Import(VerifyLoopGuardTest.NeverEstablishedConfig.class)
 class VerifyLoopGuardTest {

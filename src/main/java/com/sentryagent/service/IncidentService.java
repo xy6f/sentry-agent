@@ -39,6 +39,8 @@ public class IncidentService {
     private final NodeProgressListener progressListener;
     /** 通知监听器（可选依赖：notify 关闭时为 null，跃迁点判空跳过） */
     private final com.sentryagent.notify.NotificationListener notificationListener;
+    /** Phase 4 事件落库（可选依赖：persistence.enabled=false 时 provider 无 bean，纯内存形态） */
+    private final org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentPersistence> persistenceProvider;
 
     /** 内存事件仓（W2 换 MySQL t_incident，接口不变） */
     private final Map<Long, Map<String, Object>> incidents = new ConcurrentHashMap<>();
@@ -154,6 +156,7 @@ public class IncidentService {
                     .orElse(new HashMap<>(input));
             incidents.put(id, data);
             log.info("incident {} finished outcome={}", id, data.get(IncidentState.OUTCOME));
+            persistSnapshot(id, data);   // Phase 4：终态镜像到 t_incident（异步旁路）
             return data;
         } catch (Exception e) {
             log.error("incident {} graph execution failed", id, e);
@@ -161,7 +164,16 @@ public class IncidentService {
             err.put(IncidentState.OUTCOME, "FAILED");
             err.put(IncidentState.REPORT, "图执行异常: " + e.getMessage());
             incidents.put(id, err);
+            persistSnapshot(id, err);   // FAILED 也是终态，复盘要查得到
             return err;
+        }
+    }
+
+    /** Phase 4 落库出口：persistence 关闭时 provider 无 bean，判空跳过（零开销） */
+    private void persistSnapshot(long id, Map<String, Object> data) {
+        com.sentryagent.persist.IncidentPersistence p = persistenceProvider.getIfAvailable();
+        if (p != null) {
+            p.saveIncident(id, data);
         }
     }
 }

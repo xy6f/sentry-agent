@@ -1,0 +1,11 @@
+# 测试专用配置（Phase 4 落库引入数据源后需要）。
+# 语义与 01 项目同名文件一致：密码同源取值，环境变量缺失时回退占位。
+# 注意：单测大部分不依赖 DB；依赖 @SpringBootTest 全上下文的用例（端到端 Mock 链）
+# 需要 MySQL 可达 + sentry_agent 库已建（schema.sql 幂等自动建表）。
+spring:
+  datasource:
+    password: ${SPRING_DATASOURCE_PASSWORD:${CHANGEME_FALLBACK:changeme}}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql

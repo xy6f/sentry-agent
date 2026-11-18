@@ -171,10 +171,22 @@ START → evidence → hypothesize → verify ─┬─ 成立 ─────�
 
 ## 6. 已知遗留（如实声明）
 
+- ~~token 用量统计~~ 已完成（内存台账 + 预算护栏 + 事件快照 totalTokens 字段）。
+- ~~事件持久化~~ 已完成（Phase 4）：`sentry.persistence.enabled`（默认 true）+
+  MySQL 五表（t_incident/t_graph_step/t_evidence/t_approval/t_action_exec_log，schema.sql 幂等）；
+  内存 Map 仍是读路径事实源，MySQL 为异步旁路镜像（写失败降级不拖垮主链路）——
+  跨重启历史查账/审计有底账，"重启恢复运行中事件"仍需 checkpoint resume（演进路线已钉在 IncidentService 注释）。
+- ~~Docker 自愈 TODO(W3)~~ 已完成（Phase 3）：`DockerExecutor` 真实 docker CLI（零新依赖），
+  开关默认 false（Mock 文案）；三层安全 = HITL 令牌 + sentry-managed 白名单预检 + enabled 开关。
+- ~~通知推送~~ 已完成（Phase 1）：飞书/企微/短信骨架 + 四跃迁点路由 + 异步降级；
+  飞书交互审批卡片 body 已实现（`FeishuChannel.approvalCardBody`），公网部署后接回调（docs/DEPLOY.md 第 4 节）。
+- ~~多服务监控~~ 已完成（Phase 2）：`sentry.watchman.rules` 配置化（http-probe/prometheus/log-keyword），
+  新增被监控项目 = 加一段 YAML，核心代码零改动。
 - Nacos 未接入：配置走本地 application.yml（与计划书无关紧要的差距）。
-- token 用量统计已接内存台账（README 原遗留第 2 项，W3 补齐）：`llm/TokenLedger`
-  按 sessionId 分账、图节点两读数法写入 `totalTokens` 累加通道、GET 详情可见、
-  预算护栏可 escalate；生产落库时把 `IncidentService` 内存快照换 t_incident
-  （字段 `total_tokens` 已对齐）即可，采集口径不变。
-- getMetrics 依赖 mini-judge 在线；不在时返回"查询失败"降级文本，图不中断。
+- 部署：`Dockerfile`（多阶段+非 root+HEALTHCHECK）+ `docker-compose.yml`（sentry+MySQL+Redis+Nginx，
+  SSE 关缓冲）+ **docs/DEPLOY.md**（旁挂式三步部署+必坑八条）——生产接入手册已齐。
+- getMetrics 依赖 mini-judge 在线；不在时返回"查询失败"降级文本，图不中断
+  （通用指标源：Phase 2 的 prometheus 规则类型已覆盖"任何暴露 /metrics 的项目"）。
 - 评测方案（计划书第 8 章 10 剧本×对照基线）不在本轮范围。
+- 飞书交互卡片回调 Controller 未交付：回调需公网 HTTPS，本地无法联调（卡片 JSON 已备，
+  部署后补一个端点 + 飞书签名校验即可，DEPLOY.md 第 4 节）。

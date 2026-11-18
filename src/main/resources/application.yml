@@ -6,8 +6,38 @@ server:
 spring:
   application:
     name: sentry-agent
+  # Phase 4 事件持久化：默认启用本地 MySQL（schema.sql 幂等建表）。
+  # 单测/无 DB 环境用 SENTRY_PERSISTENCE=false 关闭（PersistenceConfig 按开关装配）。
+  datasource:
+    url: jdbc:mysql://localhost:3306/sentry_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+  sql:
+    init:
+      mode: always           # schema.sql 幂等（IF NOT EXISTS），启动安全执行
+      schema-locations: classpath:schema.sql
 
+# Phase 3/4 能力开关集中区（全部默认关 = 零依赖演示形态不变）
 sentry:
+  persistence:
+    enabled: ${SENTRY_PERSISTENCE:true}   # 事件落库开关；false = 纯内存
+  notify:
+    # Phase 1 通知总开关：默认关；生产配 webhook 后打开（渠道明细见 notify.*）
+    enabled: ${SENTRY_NOTIFY_ENABLED:false}
+    feishu:
+      enabled: ${SENTRY_FEISHU_ENABLED:false}
+      webhook: ${SENTRY_FEISHU_WEBHOOK:}
+    wecom:
+      enabled: ${SENTRY_WECOM_ENABLED:false}
+      webhook: ${SENTRY_WECOM_WEBHOOK:}
+    sms:
+      enabled: ${SENTRY_SMS_ENABLED:false}
+      phone-whitelist: ${SENTRY_SMS_PHONES:}
+  docker:
+    # Phase 3 真自愈：默认关（写工具走 MOCK 文案）；生产按 docs/DEPLOY.md 开启
+    enabled: ${SENTRY_DOCKER_ENABLED:false}
+    managed-label: sentry-managed
+    timeout-seconds: 30
   # 被守护系统的基础地址（mini-judge 走网关 8080）
   target-base-url: http://localhost:8080
   # LLM 总开关：默认 false —— 冒烟与单测走 MockDiagnoserGateway（剧本回包，零网络）。
@@ -29,7 +59,8 @@ sentry:
   dev-api:
     enabled: true
   # Watchman 自动巡检：默认关——未部署 mini-judge 时轮询必失败会疯狂建事件。
-  # 阈值语义与去重冷却的设计说明见 com.sentryagent.service.Watchman 类注释
+  # 多服务多规则（Phase 2）：rules 列表可选，空=默认规则（judge-service 队列，旧行为兼容）。
+  # 规则形态见 com.sentryagent.watchman.WatchmanRule 类注释（http-probe/prometheus/log-keyword）。
   watchman:
     enabled: false
     poll-interval-ms: 5000      # 轮询周期：上次结束起算（fixedDelay）

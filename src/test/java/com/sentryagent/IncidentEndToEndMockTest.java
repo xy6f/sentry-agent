@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 动态解析——不依赖"上一个测试有没有跑过"的隐式共享状态。</p>
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 @AutoConfigureMockMvc
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class IncidentEndToEndMockTest {

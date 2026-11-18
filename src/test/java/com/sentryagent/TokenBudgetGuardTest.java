@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （Spring 测试上下文按配置缓存：本类独立上下文，事件 id 从 1 重新计数。）
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("test")
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sentry.token-budget-per-incident=50")
 class TokenBudgetGuardTest {
