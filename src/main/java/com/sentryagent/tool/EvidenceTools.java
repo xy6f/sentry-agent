@@ -131,9 +131,10 @@ public class EvidenceTools {
     /** 写（高危）：重启容器——必须携带审批令牌，令牌一次性；docker 启用时真实执行 */
     @Tool("重启指定容器。危险操作：必须提供审批令牌 approvalId（由值班人员批准后颁发），否则拒绝执行")
     public String restartContainer(String containerId, String approvalId, Long incidentId) {
-        if (!approvalRegistry.consume(approvalId, incidentId)) {
-            log.warn("restart refused: invalid approval token for incident {}", incidentId);
-            return "REFUSED: 该操作未经人工审批（令牌无效或已使用），不得重试";
+        ApprovalRegistry.ConsumeReason reason = approvalRegistry.consumeReason(approvalId, incidentId);
+        if (reason != ApprovalRegistry.ConsumeReason.OK) {
+            // 不足清单第 2 项：过期与"无令牌"在文案上区分（EXPIRED 标记），供审批链路识别改判
+            return refusedText(reason, incidentId);
         }
         // Phase 3（清言方案三）：TODO(W3) 兑现——真实 docker restart，三层安全：
         // HITL 令牌（上面已消费）→ sentry.docker.enabled 开关 → sentry-managed 白名单预检
@@ -145,13 +146,28 @@ public class EvidenceTools {
     /** 写（高危）：扩容——令牌一次性；docker 启用时真实 compose scale */
     @Tool("扩容服务 worker 数。危险操作：必须提供审批令牌 approvalId，否则拒绝执行")
     public String scaleService(String service, int workerCount, String approvalId, Long incidentId) {
-        if (!approvalRegistry.consume(approvalId, incidentId)) {
-            return "REFUSED: 该操作未经人工审批（令牌无效或已使用），不得重试";
+        ApprovalRegistry.ConsumeReason reason = approvalRegistry.consumeReason(approvalId, incidentId);
+        if (reason != ApprovalRegistry.ConsumeReason.OK) {
+            return refusedText(reason, incidentId);
         }
         DockerExecutor.ExecResult r = dockerExecutor.scale(service, workerCount, approvalId);
         log.info("scale service={} workers={} incident={} ok={}",
                 service, workerCount, incidentId, r.ok());
         return r.output();
+    }
+
+    /**
+     * 写工具统一的 REFUSED 文案（两个写工具共用，语义必须逐字一致）：
+     * 无令牌/错令牌/用过的令牌 = "令牌无效或已使用"；过期令牌 = 带 EXPIRED 标记——
+     * approve 侧（IncidentService）靠这个标记把"审批窗口已关"区分出来改判 ESCALATED，
+     * 而不是当作普通的"无令牌"闭环掉。文案保留"不得重试"指令（护栏单测契约）。
+     */
+    private static String refusedText(ApprovalRegistry.ConsumeReason reason, Long incidentId) {
+        if (reason == ApprovalRegistry.ConsumeReason.EXPIRED) {
+            log.warn("write action refused: approval token EXPIRED, incident={}", incidentId);
+            return "REFUSED: 审批令牌已过期（EXPIRED），审批窗口已关闭，不得重试，需重新走人工审批";
+        }
+        return "REFUSED: 该操作未经人工审批（令牌无效或已使用），不得重试";
     }
 
     /**

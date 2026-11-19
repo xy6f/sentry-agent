@@ -64,13 +64,29 @@ curl -X POST http://localhost:8084/api/incidents/1/decision -d '{"approve":true}
 ## 4. 飞书交互审批卡片（公网部署后）
 
 `FeishuChannel.approvalCardBody` 已生成卡片 JSON（批准/否决按钮，value 带 incidentId）。
-按钮回调要求公网 HTTPS：
+按钮回调由 `FeishuCallbackController`（POST `/api/feishu/callback`）承接：
 
 ```
-飞书服务器 → POST https://你的域名/api/feishu/callback → 校验飞书签名 → 调 decision 接口
+飞书服务器 → POST https://你的域名/api/feishu/callback
+  → URL 验证（challenge 透传）/ 签名校验（X-Lark-Signature，HMAC-SHA256）
+  → 解析按钮 value {action: approve|reject, incident: N}
+  → incidentService.approve(id, approve) → 返回 {"result":"SUCCESS"}（卡片按钮置灰）
 ```
 
-**两道防线不可省**（清言方案安全点一）：回调侧校验飞书签名 ≈ 身份认证；消费一次性令牌 ≈ 操作授权。回调 Controller 是预留位（`IncidentController` 旁加一个端点即可），本地无法联调故未交付。
+**配置（必须）**：`.env` 里配 `SENTRY_FEISHU_SECRET=<飞书开放平台的 Encrypt Key>`。
+secret 为空时回调**跳过签名校验**（启动打 WARN）——仅限本地/内网演示；
+**生产必须配置**，否则任何知道回调地址的人都能批准重启（等价把 docker restart
+权限暴露到公网）。签名算法（飞书官方）：
+`hex(HMAC-SHA256(secret, timestamp + nonce + body))`，与请求头
+`X-Lark-Signature` 恒等比对，timestamp/nonce 取 `X-Lark-Request-Timestamp`
+/ `X-Lark-Request-Nonce` 头；校验失败一律 403。
+
+**两道防线不可省**（清言方案安全点一）：回调侧校验飞书签名 ≈ 身份认证；消费一次性令牌 ≈ 操作授权。
+回调 Controller 已交付（本节即其部署说明），本地可用 curl 模拟（无 secret 形态）联调 challenge 与按钮分派。
+
+**审批令牌 TTL（配套）**：批准签发的令牌有效期默认 10 分钟
+（`SENTRY_APPROVAL_TTL_MS` 可调），过期后写工具 REFUSED、事件自动
+ESCALATED 转人工——审批窗口收口，防"睡一觉批准的过期令牌还能执行"。
 
 ## 5. Docker 自愈的安全边界
 

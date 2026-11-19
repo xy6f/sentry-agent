@@ -9,3 +9,10 @@ spring:
     init:
       mode: always
       schema-locations: classpath:schema.sql
+
+# 单测兼容：关掉"重启播种 idGen"——端到端用例硬编码"context 首个事件 id=1"，
+# 打开播种后首个事件号会跳到 DB 底账之上（MaxStepsGuardTest 等用 1L 直取快照会 NPE）。
+# 生产/演示默认 true（application.yml 缺省即开）：重启后新事件从 DB 底账之上继续发号。
+sentry:
+  persistence:
+    seed-id-from-db: false

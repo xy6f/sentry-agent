@@ -28,6 +28,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * NodeProgressListener 的事件时间线；本服务的 get() 在返回详情快照时把
  * timeline 字段并入，SSE 端点（IncidentController.stream）补发与轮询新增
  * 读的也是同一个登记处——三条消费路径共享一份事实源，不各记各的账。</p>
+ *
+ * <p>读路径分层（不足清单第 1 项"读路径落库"）：<b>运行中事件的事实源是内存
+ * Map</b>（图重放语义要求完整 State 通道），<b>重启后历史事件的事实源是
+ * t_incident/t_graph_step</b>（IncidentPersistence 异步镜像的底账）——
+ * get()/list() 按"内存命中优先、未命中查 DB、DB 挂了降级"分层，接口 JSON
+ * 形状两条路径一致（前端零改动）。AWAITING_APPROVAL 事件重启后可从 DB 恢复
+ * 展示，但"重启续跑"不在本轮（checkpoint resume 演进路线见上）。</p>
  */
 @Slf4j
 @Service
@@ -41,10 +48,52 @@ public class IncidentService {
     private final com.sentryagent.notify.NotificationListener notificationListener;
     /** Phase 4 事件落库（可选依赖：persistence.enabled=false 时 provider 无 bean，纯内存形态） */
     private final org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentPersistence> persistenceProvider;
+    /**
+     * 读路径落库（可选依赖，与 persistence 同开关 sentry.persistence.enabled）：
+     * t_incident/t_graph_step 的读侧组装器。运行中事件不经过它——
+     * 事实源切换边界见 get()/list() 注释。
+     */
+    private final org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentQueryService> queryProvider;
 
-    /** 内存事件仓（W2 换 MySQL t_incident，接口不变） */
+    /**
+     * 内存事件仓：**运行中事件的事实源**（图重放语义要求完整 State 通道）。
+     * 终态/不存在事件的事实源在 t_incident（重启后内存清空但 DB 有底账），
+     * 读路径分层见 get()/list()。
+     */
     private final Map<Long, Map<String, Object>> incidents = new ConcurrentHashMap<>();
     private final AtomicLong idGen = new AtomicLong(1);
+
+    /** idGen 播种开关（测试 profile 关闭，保持"context 首个事件 id=1"的既有内存语义） */
+    @org.springframework.beans.factory.annotation.Value(
+            "${sentry.persistence.seed-id-from-db:true}")
+    private boolean seedIdFromDbEnabled;
+
+    /**
+     * 启动播种：idGen 从 DB 历史最大事件号之上继续发号（开关
+     * sentry.persistence.seed-id-from-db，测试 profile 关闭——现有端到端用例
+     * 依赖"context 首个事件 id=1"的内存语义，见 application-test.yml）。
+     * 修复根因：重启后 idGen 归 1，而 t_incident 已有同号底账——新建事件
+     * saveIncident 是 insert-or-update，会把历史行整行覆盖，审计底账被冲掉。
+     * DB 不可达/落库关闭时保持从 1 起（纯内存形态无所谓撞号），降级只记日志。
+     */
+    @jakarta.annotation.PostConstruct
+    void seedIdFromDb() {
+        if (!seedIdFromDbEnabled) {
+            return;
+        }
+        com.sentryagent.persist.IncidentQueryService q = queryProvider.getIfAvailable();
+        if (q != null) {
+            try {
+                long max = q.maxIncidentId();
+                if (max > 0) {
+                    idGen.set(max + 1);
+                    log.info("idGen seeded from DB: next incident id = {}", max + 1);
+                }
+            } catch (Exception e) {
+                log.warn("seed idGen from DB failed (degraded, next id = 1): {}", e.getMessage());
+            }
+        }
+    }
 
     public Map<String, Object> createAndRun(String service, String alert) {
         long id = idGen.getAndIncrement();
@@ -90,11 +139,38 @@ public class IncidentService {
             return incidents.get(incidentId);
         }
         Map<String, Object> result = run(incidentId, input);
+        // 过期令牌改判（不足清单第 2 项，approve 写路径的最小改动）：
+        // approve 的 false 现语义是"无令牌"（approve=false 分支人工否决），不能混用——
+        // 真正的"过期"只发生在图内 execute 消费令牌时（工具 REFUSED 文案带 EXPIRED 标记，
+        // 见 EvidenceTools.refusedText）。这里识别标记后把事件改判 ESCALATED：
+        // 审批窗口已关≠人工否决≠正常闭环，须如实转人工。
+        if (tokenExpiredDuringExecute(result)) {
+            Map<String, Object> expired = new HashMap<>(result);
+            expired.put(IncidentState.OUTCOME, "ESCALATED");
+            expired.put(IncidentState.REPORT, "审批令牌过期，自动转人工");
+            incidents.put(incidentId, expired);
+            persistSnapshot(incidentId, expired);   // 改判也是终态，落库镜像同步
+            notify(incidentId, "ESCALATED");
+            return expired;
+        }
         // 通知 AWAITING_APPROVAL（run 返回时若状态停在闸口）或 CLOSED（重放跑完）
         notify(incidentId, "AWAITING_APPROVAL".equals(
                 String.valueOf(result.getOrDefault(IncidentState.OUTCOME, "")))
                 ? "AWAITING_APPROVAL" : "CLOSED");
         return result;
+    }
+
+    /**
+     * 判定本轮 run 是否发生了"令牌过期"型拒绝：execute 把每个动作的执行结果
+     * 记入 ACTIONS 通道，工具对过期令牌返回的 REFUSED 文案带 EXPIRED 标记。
+     * 独立小谓词（不用流式常量拼接）便于单测直接构造状态断言。
+     */
+    private static boolean tokenExpiredDuringExecute(Map<String, Object> state) {
+        Object actions = state.get(IncidentState.ACTIONS);
+        if (!(actions instanceof List<?> list)) {
+            return false;
+        }
+        return list.stream().anyMatch(a -> String.valueOf(a).contains("EXPIRED"));
     }
 
     /** 通知出口：notify 总开关关闭时监听器为 null，直接跳过（零开销） */
@@ -105,18 +181,37 @@ public class IncidentService {
     }
 
     /**
-     * 详情视图：终态快照 + 事件时间线（NodeProgressListener 里该事件的记录）。
-     * 合并只发生在这个读侧边界——存回 incidents 的快照保持纯 State 形态，
-     * 因为 approve() 会把快照原样重放进图（run 的 input），不能有非 State 杂项。
+     * 详情视图（分层读，事实源切换边界）：
+     * <ol>
+     *   <li>内存命中 → 内存快照 + 内存时间线（运行中/本轮进程内的事件，事实源是
+     *       内存 Map——图重放语义要求完整 State 通道，DB 镜像只有摘要字段，
+     *       拿 DB 视图替代会丢 evidences/plan 等过程数据）；</li>
+     *   <li>内存未命中（重启后的历史事件 / 本进程从未见过的事件）→ 查 t_incident
+     *       组装 DB 视图（timeline 由 t_graph_step 还原）。AWAITING_APPROVAL 的
+     *       事件重启后由此恢复<b>展示</b>——但 approve 不读 DB，"重启续跑"属
+     *       checkpoint resume 演进路线（类注释已钉死），本轮只保证查得到、
+     *       界面渲染与历史行不再丢。</li>
+     * </ol>
+     * JSON 字段名/结构两条路径完全一致（前端零改动的红线）。DB 读失败降级为
+     * null（404）：读路径挂了不能拖垮主链路，与写侧旁路同一条纪律。
      */
     public Map<String, Object> get(long id) {
         Map<String, Object> snapshot = incidents.get(id);
-        if (snapshot == null) {
-            return null;
+        if (snapshot != null) {
+            Map<String, Object> view = new HashMap<>(snapshot);
+            view.put("timeline", progressListener.timeline(id));
+            return view;
         }
-        Map<String, Object> view = new HashMap<>(snapshot);
-        view.put("timeline", progressListener.timeline(id));
-        return view;
+        // 内存未命中 → DB 历史底账（重启恢复读路径）
+        com.sentryagent.persist.IncidentQueryService q = queryProvider.getIfAvailable();
+        if (q != null) {
+            try {
+                return q.detail(id);
+            } catch (Exception e) {
+                log.warn("db read incident {} failed (degraded to 404): {}", id, e.getMessage());
+            }
+        }
+        return null;
     }
 
     /** 原始快照（无 timeline），SSE 端点判断终态用 */
@@ -125,17 +220,42 @@ public class IncidentService {
     }
 
     /**
-     * 事件列表（计划书第 6 章契约 GET /api/incidents?status&page 的服务侧）。
+     * 事件列表（计划书第 6 章契约 GET /api/incidents?status&page 的服务侧，分层读）。
      * 修复根因：全量测试发现该契约端点从未实现，GET /api/incidents 返回 405——
      * 前端历史表靠 localStorage、后端数据面缺位，外部消费方（看板/报表）无入口。
-     * 返回纯 State 快照（不带 timeline，列表页不关心节点明细），按事件号升序分页。
+     *
+     * <p>事实源切换边界：内存 Map 提供<b>运行中事件</b>（含本轮进程内已终态的），
+     * t_incident 提供<b>重启前的历史事件</b>——两路按事件号合并去重（同号内存优先，
+     * 内存是运行中真相、DB 是它落库时刻的滞后镜像），再统一按事件号升序分页。
+     * status 过滤两路各自应用（DB 侧 WHERE、内存侧谓词，口径同为 outcome 精确匹配）。</p>
+     *
+     * <p>返回行是内存快照原样或 DB 视图（两者字段名/结构对齐），均不带 timeline
+     * （列表页不关心节点明细，契约既有约定）。DB 读失败降级为纯内存列表：
+     * 读路径挂了不能拖垮主链路。</p>
      */
     public List<Map<String, Object>> list(String status, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = size <= 0 ? 20 : size;
-        return incidents.values().stream()
+        // 内存路：运行中事件（状态过滤谓词与 DB 的 WHERE 同口径）
+        Map<Long, Map<String, Object>> merged = new java.util.LinkedHashMap<>();
+        incidents.values().stream()
                 .filter(s -> status == null || status.isBlank()
                         || status.equals(String.valueOf(s.get(IncidentState.OUTCOME))))
+                .forEach(s -> merged.put(
+                        ((Number) s.getOrDefault(IncidentState.INCIDENT_ID, 0L)).longValue(), s));
+        // DB 路：历史底账（同号跳过——内存优先，DB 是滞后镜像）
+        com.sentryagent.persist.IncidentQueryService q = queryProvider.getIfAvailable();
+        if (q != null) {
+            try {
+                for (Map<String, Object> row : q.listRows(status)) {
+                    long id = ((Number) row.getOrDefault(IncidentState.INCIDENT_ID, 0L)).longValue();
+                    merged.putIfAbsent(id, row);
+                }
+            } catch (Exception e) {
+                log.warn("db list incidents failed (degraded to memory-only): {}", e.getMessage());
+            }
+        }
+        return merged.values().stream()
                 .sorted(Comparator.comparingLong(s ->
                         ((Number) s.getOrDefault(IncidentState.INCIDENT_ID, 0L)).longValue()))
                 .skip((long) safePage * safeSize)

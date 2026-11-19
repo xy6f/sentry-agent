@@ -206,9 +206,9 @@ public class IncidentGraphFactory {
         // ── 条件边路由：决策逻辑抽到纯类 IncidentRouters（脱离 Spring 逐分支单测）──
         return new StateGraph<>(IncidentState.SCHEMA, IncidentState::new)
 
-                .addNode("evidence",      node_async(state -> { Map<String, Object> out = timed("evidence", progress, evidenceImpl).apply(state); mirrorStep(persistenceProvider, state.incidentId(), "evidence", out); return out; }))
-                .addNode("hypothesize",   node_async(state -> { Map<String, Object> out = timed("hypothesize", progress, hypothesizeImpl).apply(state); mirrorStep(persistenceProvider, state.incidentId(), "hypothesize", out); return out; }))
-                .addNode("verify",        node_async(state -> { Map<String, Object> out = timed("verify", progress, verifyImpl).apply(state); mirrorStep(persistenceProvider, state.incidentId(), "verify", out); return out; }))
+                .addNode("evidence",      node_async(timed("evidence", progress, evidenceImpl)))
+                .addNode("hypothesize",   node_async(timed("hypothesize", progress, hypothesizeImpl)))
+                .addNode("verify",        node_async(timed("verify", progress, verifyImpl)))
                 .addNode("plan",          node_async(timed("plan", progress, planImpl)))
                 .addNode("awaitApproval", node_async(timed("awaitApproval", progress, awaitApprovalImpl)))
                 .addNode("pending",       node_async(timed("pending", progress, pendingImpl)))
@@ -244,16 +244,29 @@ public class IncidentGraphFactory {
                         .build());
     }
 
+    /** Phase 4 落库镜像 provider：bean 方法参数暂存到字段，timed 装饰器统一接线（见 timed 注释） */
+    private final org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentPersistence> persistenceProvider;
+
+    public IncidentGraphFactory(
+            org.springframework.beans.factory.ObjectProvider<com.sentryagent.persist.IncidentPersistence> persistenceProvider) {
+        this.persistenceProvider = persistenceProvider;
+    }
+
     /**
-     * 节点计时/进度包装：执行原节点 -> 把产出摘要记入时间线（NodeProgressListener）-> 原样返回。
-     * 装饰器模式：不改任何节点逻辑，可观测性挂在装配层，mock/生产两条链路自动同享。
+     * 节点计时/进度包装：执行原节点 -> 把产出摘要记入时间线（NodeProgressListener）
+     * -> 镜像到 t_graph_step（读路径落库的写侧补齐，不足清单第 1 项）-> 原样返回。
+     * 装饰器模式：不改任何节点逻辑，可观测性/落库挂在装配层，mock/生产两条链路自动同享。
+     * 读路径落库前镜像点只覆盖 evidence/hypothesize/verify 三节点，重启后 DB 还原的
+     * timeline 缺 plan/awaitApproval/pending/execute/retrospect/escalate——
+     * 现统一收口到 timed：进度登记与落库镜像对齐到完全相同的节点集合。
      */
-    private static NodeAction<IncidentState> timed(String name,
-                                                   NodeProgressListener progress,
-                                                   NodeAction<IncidentState> delegate) {
+    private NodeAction<IncidentState> timed(String name,
+                                            NodeProgressListener progress,
+                                            NodeAction<IncidentState> delegate) {
         return state -> {
             Map<String, Object> out = delegate.apply(state);
             progress.onNodeComplete(state.incidentId(), name, out);
+            mirrorStep(persistenceProvider, state.incidentId(), name, out);
             return out;
         };
     }

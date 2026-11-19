@@ -100,9 +100,13 @@ public class LlmConfig {
     /**
      * 审批令牌注册表：common 层是零 Spring 的纯 POJO（分层纪律），
      * 所以由这里显式 @Bean 装配——"领域对象不依赖框架，框架来装配它"。
+     *
+     * <p>TTL（不足清单第 2 项）：令牌有效期 sentry.approval.token-ttl-ms（默认 10 分钟），
+     * 超时令牌 consume 返回 false——审批窗口收口，防"睡一觉起来批准的过期令牌还能执行"。</p>
      */
     @Bean
-    public com.sentryagent.tool.ApprovalRegistry approvalRegistry() {
-        return new com.sentryagent.tool.ApprovalRegistry();
+    public com.sentryagent.tool.ApprovalRegistry approvalRegistry(
+            @Value("${sentry.approval.token-ttl-ms:600000}") long tokenTtlMs) {
+        return new com.sentryagent.tool.ApprovalRegistry(tokenTtlMs);
     }
 }

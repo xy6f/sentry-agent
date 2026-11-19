@@ -21,6 +21,15 @@ spring:
 sentry:
   persistence:
     enabled: ${SENTRY_PERSISTENCE:true}   # 事件落库开关；false = 纯内存
+  # 审批令牌有效期（不足清单第 2 项）：签发后超过该时长 consume 即拒绝
+  # （写工具 REFUSED + 事件自动 ESCALATED 转人工）。语义对齐 t_approval.expire_at。
+  approval:
+    token-ttl-ms: ${SENTRY_APPROVAL_TTL_MS:600000}   # 默认 10 分钟
+  # 飞书回调签名密钥（不足清单第 6 项）：默认空=跳过校验（启动打 WARN），
+  # 仅限本地/内网演示；生产必须配置（飞书开放平台 Encrypt Key），
+  # 否则任何知道回调地址的人都能批准重启。校验算法见 FeishuCallbackController。
+  feishu:
+    secret: ${SENTRY_FEISHU_SECRET:}
   notify:
     # Phase 1 通知总开关：默认关；生产配 webhook 后打开（渠道明细见 notify.*）
     enabled: ${SENTRY_NOTIFY_ENABLED:false}
