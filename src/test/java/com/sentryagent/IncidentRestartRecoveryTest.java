@@ -8,11 +8,10 @@ import com.sentryagent.persist.IncidentEntity;
 import com.sentryagent.persist.IncidentMapper;
 import com.sentryagent.persist.IncidentQueryService;
 import com.sentryagent.service.IncidentService;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -43,13 +42,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       登记处，不由 DB 覆盖）。</li>
  * </ol>
  *
- * <p>测试库为本地 MySQL（application-test.yml 同生产配置，schema.sql 幂等建表），
- * 用例内使用远超现有底账的 ID 段（990xxx）避免与其他用例/历史数据撞号，写侧
+ * <p>数据源（CI 无 DB 化改造后，不足清单第 8 项）：@SpringBootTestWithMysql
+ * 元注解 = @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 可用时用一次性 mysql:8.0 容器（schema.sql 幂等建表），不可用而本机
+ * MySQL 可达时回落 localhost:3306，两者皆无时整类 SKIP。</p>
+ *
+ * <p>用例内使用远超现有底账的 ID 段（990xxx）避免与其他用例/历史数据撞号，写侧
  * 收尾清理自己插入的行——不依赖、也不污染其他用例的隐式共享状态。</p>
  */
-@SpringBootTest
-@ActiveProfiles("test")
-class IncidentRestartRecoveryTest {
+@SpringBootTestWithMysql
+class IncidentRestartRecoveryTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     /** 测试专用 ID 段：远超现有底账，防撞号（idGen 播种后新事件号远小于此段） */
     private static final long ID_CLOSED = 990001L;

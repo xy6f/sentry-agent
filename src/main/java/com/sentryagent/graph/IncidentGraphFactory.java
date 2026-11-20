@@ -30,15 +30,17 @@ import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
  *
  * <p>W2 三处"真实化"，拓扑一根线没动：</p>
  * <ol>
- *   <li>verify 节点由"验证方法"驱动二次定向取证：解析 hypothesize 的
- *       "假设 | 验证方法"行，把每条验证方法作为参数再调一次取证，
- *       新证据走 EVIDENCES appender 通道累积，然后基于新证据判定——
- *       回环回到 evidence 不再是空转，版本链(evidenceSeq/hypoSeq/verdictSeq
- *       + needsRegen 失效标志)保证"重放跳过、回环重算"两个语义同时成立
- *       （详见 IncidentState 类注释）；</li>
+ *   <li>verify 节点由假设驱动的定向补充取证（不足清单第 4 项进一步升级为
+ *       结构化回环）：解析 hypothesize 的结构化假设（每行 JSON，旧文本兜底），
+ *       按每条假设的 verifyAction 走网关 gatherVerifyEvidence 逐假设"对症下药"
+ *       取证，新证据走 EVIDENCES appender 通道累积，然后基于补充证据做
+ *       结构化判定（逐行 JSON 判定数组）——回环回到 evidence 不再是空转，
+ *       版本链(evidenceSeq/hypoSeq/verdictSeq + needsRegen 失效标志)保证
+ *       "重放跳过、回环重算"两个语义同时成立（详见 IncidentState 类注释）；</li>
  *   <li>plan 文本经 PlanParser 结构化为动作列表，execute 逐动作分派到
  *       @Tool 写操作，每一步都过一次性审批令牌护栏；NONE 计划由
- *       approvalRouter 直跳 retrospect；</li>
+ *       approvalRouter 直跳 retrospect。makePlan 的入参是结构化提取的
+ *       "判定成立"根因（confirmedCauses），不再是判定原文；</li>
  *   <li>STEPS 累加通道 + verifyRouter 最前置的 steps 上限判断：
  *       超过 sentry.max-steps 无条件 escalate（确定性兜底优先于模型行为）。</li>
  * </ol>
@@ -103,27 +105,32 @@ public class IncidentGraphFactory {
                           IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId) - before));
         };
 
-        // W2 核心升级：验证方法驱动二次取证（计划书 3.1"按假设再取证"的代码化）
+        // 不足清单第 4 项核心升级：verify 节点从"形式回环"变"结构化回环"——
+        // 解析每条结构化假设（JSON 优先、旧文本兜底），以其 verifyAction 为参数
+        // 走网关定向取证入口 gatherVerifyEvidence 逐假设"对症下药"，证据走
+        // EVIDENCES appender 累积，再基于补充证据做结构化判定——不是把验证方法
+        // 拼进 alert 整段重读（W2 旧做法），而是真的"这个假设说要查什么就去查什么"。
         NodeAction<IncidentState> verifyImpl = s -> {
             // 判定追平假设代数 -> 跳过（审批重放路径）；假设换代 -> 重新定向取证并判定
             if (!s.verdict().isEmpty() && s.verdictSeq() >= s.hypoSeq()) {
                 return Map.of(IncidentState.STEPS, 1);
             }
             String sessionId = "incident-" + s.incidentId();
-            // 两读数法结账：本节点内含"二次取证×N + 判定"多次推理，入口/出口各读一次
+            // 两读数法结账：本节点内含"定向取证×N + 判定"多次推理，入口/出口各读一次
             // 台账，差值一并记入 TOTAL_TOKENS（mock 下即 (N+1)×100）
             long before = gateway.tokensUsed(sessionId);
-            // 抽出每条假设的"验证方法"，作为参数逐条再调一次取证。
-            // mock 网关下这就是第二次(及以上) gatherEvidence，返回差异化的补充证据；
-            // 生产网关下同一请求交给 LLM 的取证工具自主循环
+            // 逐假设定向补充取证：mock 网关按 verifyAction 回包 [补充证据-定向]
+            // 针对性文本（逐假设差异化，防 appender 去重塌缩）；生产网关委托
+            // Diagnoser 的定向取证 prompt（只查与验证方法直接相关的证据）
             List<String> extras = new ArrayList<>();
-            for (String method : HypothesisParser.verifyMethods(s.hypotheses())) {
-                extras.add(gateway.gatherEvidence(
-                        s.service(), "补充取证:" + method, s.incidentId(), sessionId));
+            for (Hypothesis h : HypothesisParser.parse(s.hypotheses())) {
+                extras.add(gateway.gatherVerifyEvidence(h, sessionId));
             }
             String verdict = gateway.verifyHypotheses(
                     s.hypotheses(), String.join("\n", extras), sessionId);
-            boolean established = verdict.replace("不成立", "").contains("成立");
+            // 判定成立与否走结构化解析（JSON 优先、旧文本兜底、白名单全字匹配）——
+            // 旧 replace("不成立","").contains("成立") 子串推断在 JSON 判定行上必误判
+            boolean established = HypothesisParser.hasEstablished(verdict);
             return Map.of(IncidentState.EVIDENCES, extras,   // appender 通道：新证据累积而非覆盖
                           IncidentState.VERDICT, verdict,
                           IncidentState.VERIFY_ROUND, s.round() + 1,
@@ -139,8 +146,14 @@ public class IncidentGraphFactory {
                 return Map.of(IncidentState.STEPS, 1);
             }
             long before = gateway.tokensUsed(sessionId(s));
+            // 结构化回环的产出：不再把判定全文塞给 makePlan，而是把"判定成立"
+            // 的假设 cause 结构化提取出来（confirmedCauses）作为根因——判定 JSON
+            // 的字段名/引号/花括号不再漏进计划 prompt，makePlan 的入参语义从
+            // "判定文本"收窄为"确认根因"（无成立根因 = 空串 → 网关产出 NONE 计划）
             return Map.of(IncidentState.PLAN,
-                          gateway.makePlan(s.verdict(), sessionId(s)),
+                          gateway.makePlan(
+                                  HypothesisParser.confirmedCauses(s.hypotheses(), s.verdict()),
+                                  sessionId(s)),
                           IncidentState.STEPS, 1,
                           IncidentState.TOTAL_TOKENS, (int) (gateway.tokensUsed(sessionId(s)) - before));
         };

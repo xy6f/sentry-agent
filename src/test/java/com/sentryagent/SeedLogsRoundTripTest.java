@@ -1,12 +1,12 @@
 package com.sentryagent;
 
 import com.sentryagent.tool.EvidenceTools;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
@@ -24,12 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * seed-logs -> fetchServiceLogs 读写闭环验收（真实文件链路，不经 mock 网关）：
  * dev 接口写剧本日志进 sentry.logs-dir，读工具 tail 回同一段内容。
  * 日志目录指到 target/ 下，测试跑完自清洁，不污染工作区 ./logs。
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
+@SpringBootTestWithMysql
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sentry.logs-dir=./target/test-seed-logs")
-class SeedLogsRoundTripTest {
+class SeedLogsRoundTripTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     private static final Path SEED_DIR = Path.of("target/test-seed-logs");
 

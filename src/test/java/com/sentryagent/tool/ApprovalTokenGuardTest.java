@@ -22,9 +22,12 @@ class ApprovalTokenGuardTest {
     @BeforeEach
     void setUp() {
         registry = new ApprovalRegistry();
-        tools = new EvidenceTools(registry, new DockerExecutor());
-        // 本测试不触网：targetBaseUrl/logsDir 给占位值即可，写工具不读它们
-        ReflectionTestUtils.setField(tools, "targetBaseUrl", "http://127.0.0.1:1");
+        // 指标源给 mock 实现（零网络）：本测试只练写工具护栏，getMetrics 不会被调到
+        tools = new EvidenceTools(registry, new DockerExecutor(),
+                java.util.List.of(new com.sentryagent.metrics.MockMetricsProvider()));
+        ReflectionTestUtils.setField(tools, "metricsProviderName", "mock");
+        ReflectionTestUtils.setField(tools, "metricsDefaultQuery", "up");
+        // 本测试不触网：logsDir 给占位值即可，写工具不读它们
         ReflectionTestUtils.setField(tools, "logsDir", "./target/unused-logs");
         ReflectionTestUtils.setField(tools, "logsTailLines", 10);
     }

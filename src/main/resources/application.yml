@@ -49,6 +49,22 @@ sentry:
     timeout-seconds: 30
   # 被守护系统的基础地址（mini-judge 走网关 8080）
   target-base-url: http://localhost:8080
+  # 诊断取证 getMetrics 的指标源抽象（不足清单第 3 项：解绑 mini-judge）。
+  # 接口 com.sentryagent.metrics.MetricsProvider，三个实现常驻装配，
+  # EvidenceTools 按本开关从 List 里按名挑用（与 notify 渠道 List 路由同风格）。
+  metrics:
+    # 指标源选择：mock（剧本文案，零网络，默认兜底）| http（GET http-url 读状态端点）
+    # | prometheus（向 prom-url 发 instant query）。配置值不识别时自动回落 mock，
+    # 取证链路不会因配置手误起不来。
+    provider: ${SENTRY_METRICS_PROVIDER:mock}
+    # http 指标源的目标端点：缺省 = 旧行为 {target-base-url}/api/judge/status
+    # （既有部署不改配置即等价迁移）；指向其他项目时配如 http://host:port/actuator/health
+    http-url: ${SENTRY_METRICS_HTTP_URL:}
+    # prometheus 服务地址（与 Watchman 规则 prom-url 同缺省口径）
+    prom-url: ${SENTRY_METRICS_PROM_URL:http://localhost:9090}
+    # getMetrics 未显式指定指标表达式时的默认查询（prometheus 源用；mock/http 忽略）。
+    # up 是 Prometheus 惯例的存活探针表达式；换业务指标配如 judge_queue_depth
+    default-query: ${SENTRY_METRICS_DEFAULT_QUERY:up}
   # LLM 总开关：默认 false —— 冒烟与单测走 MockDiagnoserGateway（剧本回包，零网络）。
   # 置 true 且配好 api-key/base-url/model 即切到 ProdDiagnoserGateway 真实链路，图零改动。
   llm:
@@ -64,6 +80,17 @@ sentry:
   # 读工具 fetchServiceLogs 的真实文件参数（seed-logs 写、fetch 读，同用这两项）
   logs-dir: ./logs
   logs-tail-lines: 50
+  # 事件入口防线（任务 A，不足清单第 5 项）：
+  # max-concurrent = 全局并发诊断上限（Semaphore 闸门；createAndRun 与 approve 续跑
+  # 共用同一份配额，approve 续跑也算占用）。tryAcquire 失败不排队直接拒收
+  # （outcome=REJECTED_BUSY）——运维系统宁可拒收也不堆积。
+  # dedupe.enabled = 进行中去重（同 service 且 RUNNING/AWAITING_APPROVAL 的进行中
+  # 事件存在时拒绝，BUSY_DUPLICATE 附带 conflictWith）。与 Watchman 冷却构成双层防暴：
+  # 冷却管时间维度（同一告警源短时别重复喊），去重管状态维度（同服务没诊断完别再造单）。
+  incident:
+    max-concurrent: ${SENTRY_INCIDENT_MAX_CONCURRENT:3}
+    dedupe:
+      enabled: ${SENTRY_INCIDENT_DEDUPE:true}
   # dev 辅助接口开关（POST /api/dev/seed-logs）。生产部署置 false 整体摘除
   dev-api:
     enabled: true

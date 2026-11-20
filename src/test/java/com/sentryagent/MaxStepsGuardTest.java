@@ -1,10 +1,10 @@
 package com.sentryagent;
 
 import com.sentryagent.graph.IncidentState;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
@@ -20,12 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （steps>=maxSteps）必须无条件压过"判定成立"，事件落 ESCALATED 而不是继续 plan。
  * 这是对计划书 3.2"确定性兜底优先于模型行为"的端到端证明，
  * 和 IncidentRoutersTest 的纯函数分支断言互为两层保险。
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
+@SpringBootTestWithMysql
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sentry.max-steps=2")
-class MaxStepsGuardTest {
+class MaxStepsGuardTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     @Autowired
     private MockMvc mvc;

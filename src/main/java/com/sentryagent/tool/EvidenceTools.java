@@ -1,12 +1,13 @@
 package com.sentryagent.tool;
 
+import com.sentryagent.metrics.MetricsProvider;
+import com.sentryagent.metrics.MockMetricsProvider;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +30,9 @@ import java.util.List;
  *       文件不存在返回明确的"无日志"文案（LLM 拿到"无日志"应转向别的证据源，
  *       而不是抛异常打断取证循环）。演示/单测用 POST /api/dev/seed-logs
  *       （DevToolsController）先写入含 "timeout killed" 关键行的示例日志。</li>
- *   <li>getMetrics —— 真实 HTTP 轮询被守护系统的 /api/judge/status，
+ *   <li>getMetrics —— 委托可插拔指标源 {@link MetricsProvider}（不足清单第 3 项：
+ *       原"硬编码 GET {target-base-url}/api/judge/status"已解绑为 mock|http|prometheus
+ *       三实现 + sentry.metrics.provider 选择开关，见 com.sentryagent.metrics 包），
  *       失败降级为一行"查询失败"文本供模型推理。</li>
  *   <li>listRecentDeploys / getContainerStatus —— 保持 mock，但输出格式对齐
  *       计划书第 7 章剧本（"最近 24h 无变更"、"8 running, 2 restarting 超上限"），
@@ -41,9 +44,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EvidenceTools {
 
-    @Value("${sentry.target-base-url}")
-    private String targetBaseUrl;
-
     /** 日志采集目录：生产接 docker logs 后此配置作废，改为按容器名采集 */
     @Value("${sentry.logs-dir:./logs}")
     private String logsDir;
@@ -52,22 +52,65 @@ public class EvidenceTools {
     @Value("${sentry.logs-tail-lines:50}")
     private int logsTailLines;
 
+    /**
+     * 指标源选择开关（不足清单第 3 项）：mock|http|prometheus，默认 mock。
+     * 挑用逻辑见 {@link #currentProvider()}——配置值不识别时回落 mock，默认兜底。
+     */
+    @Value("${sentry.metrics.provider:mock}")
+    private String metricsProviderName;
+
+    /** getMetrics 未显式指定指标表达式时传给 provider 的默认查询（prometheus 源使用） */
+    @Value("${sentry.metrics.default-query:up}")
+    private String metricsDefaultQuery;
+
     private final ApprovalRegistry approvalRegistry;
     /** Phase 3：真实 Docker 自愈执行器（开关+白名单在内部，未启用时返回 MOCK 文案） */
     private final DockerExecutor dockerExecutor;
+    /**
+     * 全部已装配的指标源（Spring 收集所有 MetricsProvider bean，三个实现常驻）。
+     * 按 sentry.metrics.provider 从中挑用——List 注入 + 按名路由的风格与
+     * NotificationListener 的 List&lt;NotificationChannel&gt; 一致；不像 llm.enabled 那样
+     * 用 @ConditionalOnProperty 二选一装配，为的是"配置手误回落 mock"而非启动失败。
+     */
+    private final List<MetricsProvider> metricsProviders;
 
-    /** 读：目标服务状态指标（judge-service 的 /api/judge/status，队列深度/worker 忙闲） */
+    /** 读：目标服务状态指标（指标源可插拔，见 com.sentryagent.metrics.MetricsProvider） */
     @Tool("查询被监控服务的运行指标：排队深度、评测中任务数、worker 忙闲。参数 service 为服务名")
     public String getMetrics(String service) {
+        MetricsProvider provider = currentProvider();
         try {
-            String body = RestClient.create()
-                    .get().uri(targetBaseUrl + "/api/judge/status")
-                    .retrieve().body(String.class);
-            return "metrics[" + service + "] = " + body;
+            String text = provider.query(service, metricsDefaultQuery);
+            return "metrics[" + service + "] = " + text;
         } catch (Exception e) {
             // 工具失败要变成"可推理的信息"而不是抛异常炸掉循环——Agent 工程的常识
             return "metrics[" + service + "] 查询失败: " + e.getMessage();
         }
+    }
+
+    /**
+     * 指标源挑用（不足清单第 3 项的"选择开关"）：按 sentry.metrics.provider 配置值
+     * 在已装配的 provider 里按 {@link MetricsProvider#name()} 匹配；未配置/配置值
+     * 不识别时回落 {@link MockMetricsProvider}——取证链路绝不因一行配置手误起不来。
+     *
+     * <p>public 的原因：dev 探针端点（POST /api/dev/probe-metrics）回显当前生效的
+     * provider 名，方便切换配置后用 curl 逐字核对装配。</p>
+     */
+    public MetricsProvider currentProvider() {
+        String want = metricsProviderName == null || metricsProviderName.isBlank()
+                ? MockMetricsProvider.NAME : metricsProviderName.trim().toLowerCase();
+        return metricsProviders.stream()
+                .filter(p -> p.name().equals(want))
+                .findFirst()
+                .orElseGet(this::fallbackProvider);
+    }
+
+    /** 兜底挑用：优先 mock；list 为空（测试直构造等极端形态）再退到"现造一个 mock" */
+    private MetricsProvider fallbackProvider() {
+        return metricsProviders.stream()
+                .filter(p -> MockMetricsProvider.NAME.equals(p.name()))
+                .findFirst()
+                .orElseGet(() -> metricsProviders.isEmpty()
+                        ? new MockMetricsProvider() : metricsProviders.get(0));
     }
 
     /**

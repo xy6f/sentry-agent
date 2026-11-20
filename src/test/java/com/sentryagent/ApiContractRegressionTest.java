@@ -4,7 +4,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
@@ -12,6 +11,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sentryagent.support.SpringBootTestWithMysql;
 
 import java.nio.charset.StandardCharsets;
 
@@ -25,11 +25,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>对不存在事件调 POST /{id}/decision 原先 500（异常冒到容器），
  *       现与 GET 详情对齐返回 404，且确认修复后不再签发用不上的令牌。</li>
  * </ol>
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
+@SpringBootTestWithMysql
 @AutoConfigureMockMvc
-class ApiContractRegressionTest {
+class ApiContractRegressionTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     private static final ObjectMapper OM = new ObjectMapper();
 

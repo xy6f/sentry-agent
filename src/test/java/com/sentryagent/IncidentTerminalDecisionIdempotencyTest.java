@@ -2,11 +2,11 @@ package com.sentryagent;
 
 import com.sentryagent.graph.IncidentState;
 import com.sentryagent.service.IncidentService;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import com.sentryagent.tool.ApprovalRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -32,10 +32,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  *   <li>ApprovalRegistry 内部登记数不变——直接钉死"不新增令牌"。</li>
  * </ol>
  * approve 与 reject 两条分支各测一个终态（CLOSED 再批准、ESCALATED 再否决）。</p>
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
-class IncidentTerminalDecisionIdempotencyTest {
+@SpringBootTestWithMysql
+class IncidentTerminalDecisionIdempotencyTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     @Autowired
     private IncidentService incidentService;

@@ -1,9 +1,10 @@
 <script setup>
 /**
  * 左栏：证据卡片流 + 假设/判定卡片流。
- * 解析规则（[首轮]/[补充] 前缀、来源徽章、假设行 "N. 假设 | 验证方法"、
- * verdict 行 "N | 成立|不成立 | 依据" 序号对齐挂绿框/灰卡）全部走 lib/parsers.js，
- * 与旧版 renderLeft/evidenceCard 逐条一致。
+ * 解析规则（[首轮]/[补充]/[补充证据-定向] 前缀、来源徽章、结构化假设 JSON 行
+ * （cause/confidence/verifyAction）与逐行 JSON 判定（index/conclusion/reason）、
+ * 旧文本行兜底、序号对齐挂绿框/灰卡）全部走 lib/parsers.js，
+ * 与后端 HypothesisParser 保持同一"JSON 优先、旧文本兜底"的解析次序。
  */
 import { computed } from 'vue';
 import { useIncidentStore } from '../stores/incident';
@@ -13,6 +14,14 @@ const store = useIncidentStore();
 
 const evidences = computed(() => (store.snapshot?.evidences || []).map(parseEvidence));
 const hypo = computed(() => store.snapshot ? parseHypotheses(store.snapshot) : { cards: [], extra: [] });
+
+// 判定徽章文案：成立 ✓ / 不成立 ✕ / 存疑 ?（旧版只有两态，存疑会误标"不成立"）
+const verdictBadge = (v) => {
+  if (!v) return '';
+  if (v.conclusion === '成立') return '判定成立 ✓';
+  if (v.conclusion === '存疑') return '判定存疑 ?';
+  return '判定不成立 ✕';
+};
 </script>
 
 <template>
@@ -23,6 +32,7 @@ const hypo = computed(() => store.snapshot ? parseHypotheses(store.snapshot) : {
       <div v-for="(e, i) in evidences" :key="i" class="card">
         <div class="src-badges">
           <span class="tag" :class="e.first ? 'gen' : 'sec'">{{ e.first ? '首轮取证' : '补充取证' }}</span>
+          <span v-if="e.targeted" class="tag sec">[定向取证]</span>
           <span class="tag src-plain">[{{ e.src.toLowerCase() }}]</span>
           <span v-if="e.byMethod" class="tag src-plain">[by-verify-method]</span>
         </div>
@@ -39,8 +49,9 @@ const hypo = computed(() => store.snapshot ? parseHypotheses(store.snapshot) : {
       >
         <div class="src-badges">
           <span class="tag gen">假设 {{ c.idx }}</span>
+          <span v-if="c.confidence != null" class="tag src-plain">置信度 {{ c.confidence }}%</span>
           <span v-if="c.verdict" class="tag" :class="c.verdict.held ? 'hold' : 'noh'">
-            {{ c.verdict.held ? '判定成立 ✓' : '判定不成立 ✕' }}
+            {{ verdictBadge(c.verdict) }}
           </span>
         </div>
         <p class="body">{{ c.claim }}{{ c.method ? `\n验证方法：${c.method}` : '' }}</p>

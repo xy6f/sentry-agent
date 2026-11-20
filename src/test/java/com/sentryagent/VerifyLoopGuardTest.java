@@ -3,10 +3,10 @@ package com.sentryagent;
 import com.sentryagent.graph.IncidentState;
 import com.sentryagent.llm.DiagnoserGateway;
 import com.sentryagent.service.IncidentService;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 回环护栏的图级验收（测试计划 C："verify 回环次数 = max-verify-loops"）。
- * mock 剧本的验证方法恒含 cpu 关键词、首轮判定必"成立"，HTTP 面无法演示回环耗尽——
+ * mock 剧本的定向证据恒含 cpu=95%、首轮判定必"成立"，HTTP 面无法演示回环耗尽——
  * 这里换一个"永不成立"的桩网关，把 sentry.max-verify-loops 压到 2，真实走图：
  * evidence(1) hypothesize(2) verify(3, round=1) -> moreEvidence ->
  * evidence 重取(needsRegen) -> hypothesize 换代 -> verify(round=2) ->
@@ -29,12 +29,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 断言 verifyRound 恰等于上限、evidenceSeq 换代次数与回环同频（回环真重算而非空转）、
  * 终态 ESCALATED 且无计划无执行——回环耗尽转人工的完整证据链。
  * （桩网关 tokensUsed 固定返回 200，远低于预算，不触发 token 护栏分支。）
+ *
+ * <p>兼容面（渐进迁移的图级自证）：桩网关 hypothesize/verifyHypotheses 刻意
+ * 返回 mock 升级前的旧文本格式（"1. 假设X | 核对X"、"1 | 不成立 | ..."）——
+ * 结构化解析（JSON 优先、旧文本兜底）在整条图上必须照常驱动回环、判定与路由。</p>
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
+@SpringBootTestWithMysql
 @TestPropertySource(properties = "sentry.max-verify-loops=2")
 @Import(VerifyLoopGuardTest.NeverEstablishedConfig.class)
-class VerifyLoopGuardTest {
+class VerifyLoopGuardTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     /** 顶掉 mock 剧本网关：判定永远"不成立"，逼图走满回环 */
     @TestConfiguration
@@ -50,13 +57,23 @@ class VerifyLoopGuardTest {
                 }
 
                 @Override
+                public String gatherVerifyEvidence(
+                        com.sentryagent.graph.Hypothesis hypothesis, String sessionId) {
+                    // 桩定向取证：回包带假设的验证动作保证逐假设差异化
+                    // （appender 通道对全同文本去重，塌缩会让证据计数失真）
+                    return "桩定向证据[" + hypothesis.verifyAction() + "] for " + hypothesis.cause();
+                }
+
+                @Override
                 public String hypothesize(String evidence, String sessionId) {
+                    // 刻意保持旧文本格式：验证"JSON 优先、旧文本兜底"的兼容契约
                     return "1. 假设X | 核对X";
                 }
 
                 @Override
                 public String verifyHypotheses(String hypotheses, String moreEvidence,
                                                String sessionId) {
+                    // 刻意保持旧文本格式：判定解析的兜底分支必须照常工作
                     return "1 | 不成立 | 桩判定始终否定";
                 }
 

@@ -1,5 +1,6 @@
 package com.sentryagent.llm;
 
+import com.sentryagent.graph.Hypothesis;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
 import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
@@ -94,6 +95,22 @@ public class ProdDiagnoserGateway implements DiagnoserGateway {
         currentSession.set(sessionId);
         try {
             return diagnoser.gatherEvidence(service, alert, incidentId, sessionId);
+        } finally {
+            currentSession.remove();
+        }
+    }
+
+    /**
+     * 定向补充取证（不足清单第 4 项）：把结构化假设拆成 cause/verifyAction 两个
+     * prompt 参数，委托 Diagnoser 的定向取证 prompt——"按假设再取证"在生产侧
+     * 同样是对症下药，而不是把验证方法拼进 alert 整段重读。
+     */
+    @Override
+    public String gatherVerifyEvidence(Hypothesis hypothesis, String sessionId) {
+        currentSession.set(sessionId);
+        try {
+            return diagnoser.gatherVerifyEvidence(
+                    hypothesis.cause(), hypothesis.verifyAction(), sessionId);
         } finally {
             currentSession.remove();
         }

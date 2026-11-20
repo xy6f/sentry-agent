@@ -34,8 +34,12 @@ public class RuleEvaluator {
 
     private static final Pattern QUEUE_DEPTH = Pattern.compile("\"queueDepth\"\\s*:\\s*(\\d{1,9})");
     private static final Pattern QUEUED = Pattern.compile("\"queued\"\\s*:\\s*(\\d{1,9})");
-    /** prometheus /api/v1/query 响应里的数值：value":[<ts>,"<num>"] 形态 */
-    private static final Pattern PROM_VALUE = Pattern.compile("\"value\"\\s*:\\s*\\[[^\\]]*,\\s*\"(-?\\d+(?:\\.\\d+)?)\"");
+    /**
+     * prometheus /api/v1/query 响应里的数值："value":[<ts>,"<num>"] 形态。
+     * public 的原因（不足清单第 3 项）：诊断取证的 PrometheusMetricsProvider 与本类
+     * 共用这把解析尺子——巡检与取证的数值口径不分家，正则改动两处单测同时红。
+     */
+    public static final Pattern PROM_VALUE = Pattern.compile("\"value\"\\s*:\\s*\\[[^\\]]*,\\s*\"(-?\\d+(?:\\.\\d+)?)\"");
 
     private final ProbeFn probeFn;
 

@@ -1,11 +1,11 @@
 package com.sentryagent;
 
 import com.sentryagent.graph.IncidentState;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -17,18 +17,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * token 预算护栏的图级验收（sentry.token-budget-per-incident）：
  * 把预算压到 50（< mock 单次调用的 100），真实走一遍图——
- * evidence(100) → hypothesize(200) → verify(二次取证+判定 = 500) 后，
+ * evidence(100) → hypothesize(200) → verify(定向取证×2+判定 = 500) 后，
  * verifyRouter 的 token 分支（totalTokens >= budget）必须无条件压过"判定成立"，
  * 事件落 ESCALATED 而不是继续 plan。与 MaxStepsGuardTest 同款布局：
  * 步数护栏与成本护栏两道确定性兜底各自有一个图级红灯开关，
  * 和 IncidentRoutersTest 的纯函数分支断言互为两层保险。
  * （Spring 测试上下文按配置缓存：本类独立上下文，事件 id 从 1 重新计数。）
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
+@SpringBootTestWithMysql
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sentry.token-budget-per-incident=50")
-class TokenBudgetGuardTest {
+class TokenBudgetGuardTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     @Autowired
     private MockMvc mvc;
@@ -49,7 +52,7 @@ class TokenBudgetGuardTest {
         Map<String, Object> snap = incidentService.rawSnapshot(1L);
         assertEquals("ESCALATED", String.valueOf(snap.get(IncidentState.OUTCOME)),
                 "token 预算护栏必须优先于判定放行（与 steps 护栏同款语义）");
-        // 账面：evidence(100) + hypothesize(100) + verify(二次取证2×100 + 判定100=400)
+        // 账面：evidence(100) + hypothesize(100) + verify(定向取证2×100 + 判定100=300)
         // = 5 次调用照实入账；护栏在 verify 之后的条件边上拦下，plan 不得产出
         assertEquals(500, snap.get(IncidentState.TOTAL_TOKENS),
                 "escalate 前已发生的推理调用照实入账（取证/假设/二次取证×2/判定）");

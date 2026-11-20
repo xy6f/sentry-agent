@@ -1,0 +1,12 @@
+[
+  {"id": "S01-queue-backlog-approve", "service": "judge-service", "summary": "队列深度 320 > 200 且爬升，worker 池饱和", "decision": "approve", "expectOutcome": "CLOSED", "expectKeywords": ["RESTART", "根因"]},
+  {"id": "S02-queue-backlog-reject", "service": "judge-service", "summary": "队列积压但正在发版窗口，不宜自动处置", "decision": "reject", "expectOutcome": "ESCALATED", "expectKeywords": ["人工否决"]},
+  {"id": "S03-disk-full-approve", "service": "storage-svc", "summary": "磁盘使用率 96%，写入开始报错", "decision": "approve", "expectOutcome": "CLOSED", "expectKeywords": ["RESTART"]},
+  {"id": "S04-gateway-5xx-reject", "service": "api-gateway", "summary": "网关 5xx 率 8%，多个上游探测失败", "decision": "reject", "expectOutcome": "ESCALATED", "expectKeywords": ["人工否决"]},
+  {"id": "S05-db-lock-approve", "service": "mysql-prod", "summary": "Lock wait timeout 频发，慢查询堆积", "decision": "approve", "expectOutcome": "CLOSED", "expectKeywords": ["RESTART"]},
+  {"id": "S06-redis-flap-approve", "service": "redis-cache", "summary": "主从切换频繁，命中率从 95% 跌至 60%", "decision": "approve", "expectOutcome": "CLOSED", "expectKeywords": ["RESTART"]},
+  {"id": "S07-crawler-blocked-reject", "service": "spider-job", "summary": "目标站点反爬升级，成功率跌破 70%", "decision": "reject", "expectOutcome": "ESCALATED", "expectKeywords": ["人工否决"]},
+  {"id": "S08-oom-loop-approve", "service": "order-service", "summary": "OutOfMemoryError 每 10 分钟一次，容器被反复 OOMKill", "decision": "approve", "expectOutcome": "CLOSED", "expectKeywords": ["RESTART"]},
+  {"id": "S09-deploy-regression-reject", "service": "payment-api", "summary": "凌晨发版后错误率翻倍，疑似回归", "decision": "reject", "expectOutcome": "ESCALATED", "expectKeywords": ["人工否决"]},
+  {"id": "S10-cert-expiry-approve", "service": "static-site", "summary": "TLS 证书剩余 3 天，续期任务未生效", "decision": "approve", "expectOutcome": "CLOSED", "expectKeywords": ["RESTART"]}
+]

@@ -32,19 +32,53 @@ public interface Diagnoser {
                           @V("incidentId") Long incidentId,
                           @MemoryId String sessionId);
 
-    /** 假设生成：结构化约束写在 prompt，W2 换 JSON Schema 输出+校验 */
+    /**
+     * 定向补充取证（不足清单第 4 项）：verify 节点对每条结构化假设按其
+     * verifyAction 单独发起的"对症下药"取证。与 gatherEvidence 的区别：
+     * 这里有明确的验证对象与验证方法，prompt 约束"只收集与该验证方法
+     * 直接相关的证据"，不允许漫无目的地重读整段证据。
+     */
+    @SystemMessage("""
+            你是 SRE 取证模块的定向验证子模块。针对给定的根因假设与验证方法
+            做"对症下药"的定向取证：只收集与该验证方法直接相关的证据，
+            不做无关查询、不整段重读已有证据。
+            纪律：只调用查询类工具；工具返回失败时如实记录，不要编造数据。
+            输出一段简明证据清单（每条带来源）。
+            """)
+    @UserMessage("""
+            根因假设：{cause}
+            验证方法：{verifyAction}
+            请按验证方法定向取证。
+            """)
+    String gatherVerifyEvidence(@V("cause") String cause,
+                                @V("verifyAction") String verifyAction,
+                                @MemoryId String sessionId);
+
+    /**
+     * 假设生成：结构化输出（不足清单第 4 项，W2 曾是自由文本"假设描述 | 验证方法"）。
+     * 注意这里的 JSON 行格式是三方共享契约：mock 网关 MockDiagnoserGateway.hypothesize
+     * 的剧本输出、后端 HypothesisParser.parse（JSON 优先、旧文本兜底）与前端
+     * parsers.js.parseHypotheses 按同一格式消费——改格式必须三处同步。
+     */
     @SystemMessage("""
             你是根因分析模块。基于证据最多列 3 个可验证的根因假设。
             每个假设必须给出"如何验证"（具体查什么数据、预期看到什么）。
-            格式（严格遵守）每行一条： 假设描述 | 验证方法
+            格式（严格遵守）每行一条 JSON，除 JSON 行外不要输出任何其他文字：
+            {"cause":"假设描述","confidence":0到100的整数,"verifyAction":"具体验证动作"}
             """)
     @UserMessage("证据：\n{evidence}\n请给出假设列表。")
     String hypothesize(@V("evidence") String evidence, @MemoryId String sessionId);
 
-    /** 假设验证：判定成立/不成立 */
+    /**
+     * 假设验证：判定成立/不成立/存疑，输出逐行 JSON 判定（判定数组按行组织，
+     * 每行独立可解析）。契约三方：MockDiagnoserGateway.verifyHypotheses 的
+     * 剧本输出、HypothesisParser.parseVerdicts（JSON 优先、旧文本兜底）、
+     * 前端 parsers.js.parseHypotheses。
+     */
     @SystemMessage("""
             你是验证模块。对比补充证据与假设预期，逐条判定 成立/不成立/存疑。
-            格式： 假设序号 | 成立|不成立|存疑 | 依据
+            格式（严格遵守）每行一条 JSON，除 JSON 行外不要输出任何其他文字：
+            {"index":假设序号整数,"conclusion":"成立|不成立|存疑","reason":"判定依据"}
             """)
     @UserMessage("假设：\n{hypotheses}\n补充验证证据：\n{moreEvidence}\n请判定。")
     String verifyHypotheses(@V("hypotheses") String hypotheses,

@@ -1,9 +1,18 @@
 # 测试专用配置（Phase 4 落库引入数据源后需要）。
 # 语义与 01 项目同名文件一致：密码同源取值，环境变量缺失时回退占位。
-# 注意：单测大部分不依赖 DB；依赖 @SpringBootTest 全上下文的用例（端到端 Mock 链）
-# 需要 MySQL 可达 + sentry_agent 库已建（schema.sql 幂等自动建表）。
+# 注意：依赖 DB 的 @SpringBootTestWithMysql 用例（端到端 Mock 链等 9 类 16 用例）
+# 的数据源优先级为三级回退（不足清单第 8 项"CI 无 DB 化"改造）：
+#   1. Testcontainers 容器（Docker 可用时 @DynamicPropertySource 动态覆盖，
+#      见 com.sentryagent.support.SpringBootTestWithMysql）；
+#   2. 本机 MySQL 回退——即下面这段 localhost 配置（url 缺省继承 application.yml）；
+#   3. 两者皆无 → RequiresDockerCondition 判定整类 SKIP（SKIP 不等于 FAIL，
+#      纯逻辑用例照常执行，构建保持绿；矩阵说明见 docs/CI.md）。
 spring:
   datasource:
+    # 本地回退专用 url（原来缺省继承 application.yml 的 localhost:3306，这里显式钉死）：
+    # CI 无 Docker 无 MySQL 时 DB 用例已整类 SKIP，走到这里说明是"本地开发机"场景
+    url: jdbc:mysql://localhost:3399/sentry_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
     password: ${SPRING_DATASOURCE_PASSWORD:${CHANGEME_FALLBACK:changeme}}
   sql:
     init:
@@ -16,3 +25,10 @@ spring:
 sentry:
   persistence:
     seed-id-from-db: false
+  # 单测兼容（任务 A）：既有 @SpringBootTest 用例（端到端/契约/幂等/护栏）在同服务
+  # judge-service 上连发建事件，进行中去重会把它们判成 BUSY_DUPLICATE——测试口径
+  # 与旧行为一致（不去重），防线语义由 IncidentConcurrencyGuardTest 独立验收。
+  # 并发上限不覆盖（默认 3）：现有用例均为串行建单，终态即归还配额，互不影响。
+  incident:
+    dedupe:
+      enabled: false

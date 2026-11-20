@@ -64,7 +64,9 @@ class ApprovalExpiredEscalateTest {
     @DisplayName("工具层：过期令牌 REFUSED 文案带 EXPIRED 标记，且保留'不得重试'指令")
     void toolRefusalCarriesExpiredMarker() throws InterruptedException {
         ApprovalRegistry registry = new ApprovalRegistry(1L);
-        EvidenceTools tools = new EvidenceTools(registry, new DockerExecutor());
+        // 指标源给 mock 实现（零网络）：本用例只练过期令牌护栏，getMetrics 不会被调到
+        EvidenceTools tools = new EvidenceTools(registry, new DockerExecutor(),
+                List.of(new com.sentryagent.metrics.MockMetricsProvider()));
         String token = registry.issue(7L);
         long deadline = System.currentTimeMillis() + 2;
         while (System.currentTimeMillis() < deadline) {

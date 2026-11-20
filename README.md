@@ -190,3 +190,17 @@ START → evidence → hypothesize → verify ─┬─ 成立 ─────�
 - 评测方案（计划书第 8 章 10 剧本×对照基线）不在本轮范围。
 - 飞书交互卡片回调 Controller 未交付：回调需公网 HTTPS，本地无法联调（卡片 JSON 已备，
   部署后补一个端点 + 飞书签名校验即可，DEPLOY.md 第 4 节）。
+
+## 7. 评测报告（Phase 3 harness 实测）
+
+`GET /api/dev/eval/scenarios`（或 `scripts/run-scenarios.sh`）一键跑 10 条故障剧本：
+
+```
+Summary: scenarios: 10/10 passed in 384ms
+S01-queue-backlog-approve  CLOSED      700 tokens   44ms
+S02-queue-backlog-reject   ESCALATED   600 tokens   22ms
+...（全明细见接口返回）
+```
+
+mock 网关下路由确定性——跑批全绿即路由/审批/去重契约无回归；接真实 LLM 后
+同一份剧本升级为诊断质量基线（MTTD/命中率的对照数据源）。

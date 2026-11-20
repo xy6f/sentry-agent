@@ -112,6 +112,30 @@ class IncidentRoutersTest {
     }
 
     @Test
+    @DisplayName("JSON 判定（不足清单第 4 项）：成立放行去 plan，全不成立回环")
+    void jsonVerdictRoutesByStructuredParse() {
+        // 结构化判定通道（逐行 JSON）的正路径：conclusion=成立 → plan
+        IncidentState established = state(
+                "{\"index\":1,\"conclusion\":\"成立\",\"reason\":\"cpu=95% 且容器超限\"}", 1, 3, "", "");
+        assertEquals("plan", IncidentRouters.verifyRouter(established, MAX_LOOPS, MAX_STEPS, TOKEN_BUDGET));
+
+        // JSON 时代的同款子串陷阱回归：全"不成立"的 JSON 行若仍用旧
+        // replace("不成立","").contains("成立") 子串推断，替换后恰好剩下
+        // "成立"字样会被误放行——路由必须走结构化白名单匹配
+        IncidentState allRejected = state(
+                "{\"index\":1,\"conclusion\":\"不成立\",\"reason\":\"证据不足\"}\n"
+                        + "{\"index\":2,\"conclusion\":\"不成立\",\"reason\":\"证据不足\"}", 0, 2, "", "");
+        assertEquals("moreEvidence",
+                IncidentRouters.verifyRouter(allRejected, MAX_LOOPS, MAX_STEPS, TOKEN_BUDGET));
+
+        // 存疑：不算成立 → 回环（存疑不是放行依据，宁可多取证一圈）
+        IncidentState uncertain = state(
+                "{\"index\":1,\"conclusion\":\"存疑\",\"reason\":\"证据相互矛盾\"}", 1, 2, "", "");
+        assertEquals("moreEvidence",
+                IncidentRouters.verifyRouter(uncertain, MAX_LOOPS, MAX_STEPS, TOKEN_BUDGET));
+    }
+
+    @Test
     @DisplayName("空判定文本（异常出口）：不成立路径，走回环/耗尽逻辑")
     void emptyVerdictTreatedAsNotEstablished() {
         assertEquals("moreEvidence",

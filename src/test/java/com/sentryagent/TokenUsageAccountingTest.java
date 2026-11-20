@@ -2,11 +2,11 @@ package com.sentryagent;
 
 import com.sentryagent.graph.IncidentState;
 import com.sentryagent.service.IncidentService;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
@@ -33,10 +33,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>预算护栏分支（budget=50 强制 escalate）见 {@link TokenBudgetGuardTest}；
  * 路由级纯函数断言见 IncidentRoutersTest——两层保险，与 steps 护栏的测试布局同款。</p>
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
+@SpringBootTestWithMysql
 @AutoConfigureMockMvc
-class TokenUsageAccountingTest {
+class TokenUsageAccountingTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     /** 从创建响应 JSON 里抠 incidentId（与 IncidentEndToEndMockTest 同款解析） */
     private static final Pattern ID_JSON = Pattern.compile("\"incidentId\"\\s*:\\s*(\\d+)");
@@ -66,7 +70,7 @@ class TokenUsageAccountingTest {
                 .andReturn();
         long id = extractId(created);
 
-        // ── 第一轮账本：evidence(100) + hypothesize(100) + verify(二次取证2×100 + 判定100=400)
+        // ── 第一轮账本：evidence(100) + hypothesize(100) + verify(定向取证2×100 + 判定100=300)
         //    + plan(100) = 6 次推理调用 → totalTokens 恰为 600 ──
         Map<String, Object> first = incidentService.rawSnapshot(id);
         assertEquals(600, first.get(IncidentState.TOTAL_TOKENS),

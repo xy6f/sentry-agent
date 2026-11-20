@@ -39,9 +39,16 @@ public class IncidentState extends AgentState {
     public static final String ALERT         = "alert";
     /** 证据清单（累积） */
     public static final String EVIDENCES     = "evidences";
-    /** 假设列表文本（覆盖） */
+    /**
+     * 假设列表文本（覆盖）。不足清单第 4 项起通道内容升级为"每行一个 JSON 对象"
+     * 的结构化格式（{"cause","confidence","verifyAction"}）——evidences 通道保持
+     * appender 语义不变；旧文本 "假设 | 验证方法" 由 HypothesisParser 兜底兼容。
+     */
     public static final String HYPOTHESES    = "hypotheses";
-    /** 验证判定（覆盖） */
+    /**
+     * 验证判定（覆盖）。不足清单第 4 项起通道内容升级为逐行 JSON 判定数组
+     * （{"index","conclusion","reason"}）；旧文本 "序号 | 结论 | 依据" 兜底兼容。
+     */
     public static final String VERDICT       = "verdict";
     /** 回环计数（verify 每执行一次 +1），verifyRouter 用它对比 max-verify-loops */
     public static final String VERIFY_ROUND  = "verifyRound";
@@ -113,8 +120,21 @@ public class IncidentState extends AgentState {
     public int verdictSeq()    { return this.<Integer>value(VERDICT_SEQ).orElse(0); }
     public boolean needsRegen(){ return this.<Boolean>value(NEEDS_REGEN).orElse(Boolean.FALSE); }
 
-    /** 判定是否"有假设成立"：先剔除"不成立"再找"成立"，防子串误判（见 IncidentRouters） */
+    /** 结构化假设视图：JSON 行优先、旧文本兜底（不足清单第 4 项） */
+    public List<Hypothesis> hypothesisList() { return HypothesisParser.parse(hypotheses()); }
+
+    /** 结构化判定视图：JSON 行优先、旧文本兜底（不足清单第 4 项） */
+    public List<Verdict> verdictList() { return HypothesisParser.parseVerdicts(verdict()); }
+
+    /**
+     * 判定是否"有假设成立"：结构化解析后严格全字匹配"成立"。
+     * 历史坑（保留）：旧实现 replace("不成立","").contains("成立") 的子串推断，
+     * 在判定文本升级为 JSON 后必然误判——JSON 行
+     * {"conclusion":"不成立",...} 替换掉"不成立"后恰好剩下"成立"字样，
+     * 全不成立会被放行去 plan。现在统一走 HypothesisParser.hasEstablished
+     * 的白名单匹配（IncidentRouters 与 makePlan 同口径）。
+     */
     public boolean verdictEstablished() {
-        return verdict().replace("不成立", "").contains("成立");
+        return HypothesisParser.hasEstablished(verdict());
     }
 }

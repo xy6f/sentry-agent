@@ -19,10 +19,13 @@ public final class IncidentRouters {
      *       计划书 3.2"确定性兜底优先于模型行为"），排最前保证优先级。成本护栏读
      *       状态里的 totalTokens 累加通道（网关每次推理后写入增量），语义与
      *       "步数超限"完全同款：宁可转人工，不让账单失控；</li>
-     *   <li>判定含"成立"：去 plan。注意必须先剔除"不成立"再找"成立"——
-     *       否则 "1 | 不成立" 这种文本会因包含子串"成立"被误放行（真实踩过的坑）；</li>
+     *   <li>判定"有假设成立"：去 plan。成立与否走 IncidentState.verdictEstablished
+     *       的结构化解析（JSON 优先、旧文本兜底、白名单全字匹配）——历史坑（保留）：
+     *       旧实现 replace("不成立","").contains("成立") 的子串推断，文本时代
+     *       "1 | 不成立"会误放行，JSON 时代 {"conclusion":"不成立"} 替换后照样
+     *       剩下"成立"字样，全不成立照样误判——两条路都封死才能算修复；</li>
      *   <li>不成立且回环未超 sentry.max-verify-loops：moreEvidence，回 evidence
-     *       重新取证再假设——验证方法驱动的二次取证让这一圈真正产生新信息；</li>
+     *       重新取证再假设——verify 节点的定向补充取证让这一圈真正产生新信息；</li>
      *   <li>圈数耗尽：escalate 转人工。</li>
      * </ol>
      */
@@ -33,8 +36,7 @@ public final class IncidentRouters {
         if (s.totalTokens() >= tokenBudget) {
             return "escalate";
         }
-        String verdictWithoutNegative = s.verdict().replace("不成立", "");
-        if (verdictWithoutNegative.contains("成立")) {
+        if (s.verdictEstablished()) {
             return "plan";
         }
         if (s.round() < maxLoops) {

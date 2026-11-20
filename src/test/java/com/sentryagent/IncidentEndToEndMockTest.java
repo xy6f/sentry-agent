@@ -3,6 +3,7 @@ package com.sentryagent;
 import com.sentryagent.graph.IncidentState;
 import com.sentryagent.service.IncidentService;
 import com.sentryagent.service.NodeProgressListener;
+import com.sentryagent.support.SpringBootTestWithMysql;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,6 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.Order;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
@@ -43,12 +43,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>方法顺序钉死（Order）：happy path 先跑，否决路径后跑且事件 id 全部从响应体
  * 动态解析——不依赖"上一个测试有没有跑过"的隐式共享状态。</p>
+ *
+ * <p>CI 无 DB 化（不足清单第 8 项）：@SpringBootTestWithMysql 元注解 =
+ * @SpringBootTest + test profile + Docker 条件放行 + Testcontainers MySQL；
+ * Docker 与本机 MySQL 均不可用时整类 SKIP。</p>
  */
-@SpringBootTest
-@org.springframework.test.context.ActiveProfiles("test")
+@SpringBootTestWithMysql
 @AutoConfigureMockMvc
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class IncidentEndToEndMockTest {
+class IncidentEndToEndMockTest extends com.sentryagent.support.MySQLContainerBaseTest {
 
     /** 从创建响应 JSON 里抠 incidentId 数字，两个测试各自取自己新建的事件 */
     private static final Pattern ID_JSON = Pattern.compile("\"incidentId\"\\s*:\\s*(\\d+)");
@@ -79,10 +82,17 @@ class IncidentEndToEndMockTest {
                         .value("AWAITING_APPROVAL"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.plan")
                         .value(org.hamcrest.Matchers.containsString("RESTART")))
+                // 结构化判定（不足清单第 4 项）：verdict 通道是逐行 JSON，
+                // HTTP 面上就能看到 {"index":1,"conclusion":"成立",...}
                 .andExpect(MockMvcResultMatchers.jsonPath("$.verdict")
-                        .value(org.hamcrest.Matchers.containsString("成立")))
+                        .value(org.hamcrest.Matchers.containsString("\"conclusion\":\"成立\"")))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.verdict")
+                        .value(org.hamcrest.Matchers.containsString("\"index\":1")))
+                // 结构化假设：hypotheses 通道是逐行 JSON（cause/confidence/verifyAction）
+                .andExpect(MockMvcResultMatchers.jsonPath("$.hypotheses")
+                        .value(org.hamcrest.Matchers.containsString("\"confidence\":85")))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.evidences",
-                        org.hamcrest.Matchers.hasSize(3)))   // 首轮 1 条 + verify 二次取证 2 条
+                        org.hamcrest.Matchers.hasSize(3)))   // 首轮 1 条 + verify 定向取证 2 条
                 .andExpect(MockMvcResultMatchers.jsonPath("$.steps").value(6))
                 // token 用量统计（README 遗留清单第 2 项）：evidence/hypothesize/verify(3次)/plan
                 // 共 6 次模型调用 × mock 单次 100 = 600，对外可见
@@ -92,9 +102,10 @@ class IncidentEndToEndMockTest {
 
         Map<String, Object> first = incidentService.rawSnapshot(id);
         assertNotNull(first);
-        // 二次取证已把"补充证据"进 appender 通道：回环路径上 verify 真的产生过新信息
+        // 定向取证已把 [补充证据-定向] 进 appender 通道：verify 按假设 verifyAction
+        // 逐条取证（不足清单第 4 项"对症下药"），回环路径上真的产生过新信息
         List<?> evidences = (List<?>) first.get(IncidentState.EVIDENCES);
-        assertTrue(evidences.stream().anyMatch(o -> String.valueOf(o).contains("[补充证据]")),
+        assertTrue(evidences.stream().anyMatch(o -> String.valueOf(o).contains("[补充证据-定向]")),
                 "verify 节点的定向取证必须累积进证据通道");
         List<NodeProgressListener.TimelineEvent> tl1 = incidentService.timeline(id);
         assertEquals(6, tl1.size()); // evidence/hypothesize/verify/plan/awaitApproval/pending

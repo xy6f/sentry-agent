@@ -50,37 +50,73 @@ export function parsePlan(planText, onDrop = () => {}) {
   return out;
 }
 
-/* ── 证据卡（旧版 evidenceCard 的解析规则） ──
- * "[首轮证据]" 前缀 → 首轮取证，否则补充取证；
+/* ── 证据卡（旧版 evidenceCard 的解析规则 + 不足清单第 4 项的定向徽章） ──
+ * "[首轮证据]" 前缀 → 首轮取证；"[补充证据-定向]" 前缀 → verify 节点按假设
+ * verifyAction 的定向补充取证；其余为兼容路径的普通补充取证；
  * 来源徽章按文本特征：logs[ → LOG，metrics[ → METRICS，containers → CONTAINER，
  * deploys[ → DEPLOY，其余 EVIDENCE；含「验证项」追加 BY-VERIFY-METHOD。 */
 export function parseEvidence(s) {
   const first = /^\[首轮证据\]/.test(s);
+  const targeted = /^\[补充证据-定向\]/.test(s);
   const src = s.includes('logs[') ? 'LOG'
     : s.includes('metrics[') ? 'METRICS'
       : s.includes('containers') ? 'CONTAINER'
         : s.includes('deploys[') ? 'DEPLOY' : 'EVIDENCE';
-  return { text: s, first, src, byMethod: s.includes('验证项') };
+  return { text: s, first, targeted, src, byMethod: s.includes('验证项') };
 }
 
-/* ── 假设 / 判定卡（旧版 renderLeft 的解析规则） ──
- * hypotheses 行契约："N. 假设 | 验证方法"；
- * verdict 行契约："N | 成立|不成立 | 依据"（序号对齐挂到对应假设卡上）。 */
+/* ── 假设 / 判定卡（不足清单第 4 项：结构化 JSON 优先、旧文本兜底） ──
+ * hypotheses 行契约（新）：每行一个 JSON {"cause":...,"confidence":0-100,"verifyAction":"..."}；
+ * hypotheses 行契约（旧兜底）："N. 假设 | 验证方法"；
+ * verdict 行契约（新）：每行一个 JSON {"index":N,"conclusion":"成立|不成立|存疑","reason":"..."}；
+ * verdict 行契约（旧兜底）："N | 成立|不成立 | 依据"。
+ * JSON 行解析失败自动回退旧文本正则（与后端 HypothesisParser 同一解析次序，
+ * 渐进迁移不破坏旧剧本）；判定按 index 挂到对应假设卡上。 */
+function tryJson(line) {
+  if (!line.startsWith('{')) return null;
+  try { return JSON.parse(line); } catch { return null; }
+}
+
 export function parseHypotheses(snap) {
   const hLines = (snap.hypotheses || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const vLines = (snap.verdict || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const verdictByIdx = {};
   for (const l of vLines) {
-    const m = l.match(/^(\d+)[.、]?\s*\|\s*(不成立|成立)\s*\|\s*(.*)$/);
-    if (m) verdictByIdx[m[1]] = { held: m[2] === '成立', why: m[3] };
+    const j = tryJson(l);
+    if (j && j.index != null) {
+      const conclusion = j.conclusion || '';
+      verdictByIdx[String(j.index)] = { held: conclusion === '成立', conclusion, why: j.reason || '' };
+      continue;
+    }
+    const m = l.match(/^(\d+)[.、]?\s*\|\s*(不成立|成立|存疑)\s*\|\s*(.*)$/);
+    if (m) verdictByIdx[m[1]] = { held: m[2] === '成立', conclusion: m[2], why: m[3] };
   }
-  const cards = hLines.map((line, i) => {
+  const cards = [];
+  hLines.forEach((line, i) => {
+    const j = tryJson(line);
+    if (j && j.cause) {
+      cards.push({
+        idx: String(i + 1),
+        claim: String(j.cause),
+        method: j.verifyAction || '',
+        confidence: Number.isFinite(Number(j.confidence)) && j.confidence !== '' ? Number(j.confidence) : null,
+        verdict: verdictByIdx[String(i + 1)] || null,
+      });
+      return;
+    }
     const m = line.match(/^(\d+)[.、]?\s*(.*?)\s*\|\s*(.+)$/);
-    const idx = m ? m[1] : String(i + 1);
-    const claim = m ? m[2] : line;
-    const method = m ? m[3] : '';
-    return { idx, claim, method, verdict: verdictByIdx[idx] || null };
+    if (m) {
+      cards.push({ idx: m[1], claim: m[2], method: m[3], confidence: null, verdict: verdictByIdx[m[1]] || null });
+    } else {
+      // 旧版宽容行为：无竖线行整行当假设（验证方法缺失，序号按行序）
+      cards.push({ idx: String(i + 1), claim: line, method: '', confidence: null, verdict: verdictByIdx[String(i + 1)] || null });
+    }
   });
-  const extra = vLines.filter((l) => !/^\d+[.、]?\s*\|/.test(l));
+  // 既不是合法 JSON 判定、也不匹配旧文本判定的杂行 → extra（原样展示不静默吞掉）
+  const extra = vLines.filter((l) => {
+    const j = tryJson(l);
+    if (j && j.index != null) return false;
+    return !/^\d+[.、]?\s*\|/.test(l);
+  });
   return { cards, extra };
 }
