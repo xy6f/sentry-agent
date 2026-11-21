@@ -56,11 +56,18 @@ export const useIncidentStore = defineStore('incident', () => {
     const url = base + path;
     apiLog.log(`${method} ${path}${body ? ' ' + short(JSON.stringify(body), 80) : ''}`);
     const t0 = performance.now();
+    // 第四批 4.1：审批决策/评测跑批是"管理写面"，后端开了 admin-key 鉴权时必须带头；
+    // 头只对受保护路径追加，其余请求形态不变（查询面零影响）
+    const guarded = (method === 'POST' && path.endsWith('/decision'))
+      || path.startsWith('/api/dev/eval');
+    const headers = body
+      ? { 'Content-Type': 'application/json', ...(guarded && apiLog.adminKey ? { 'X-Admin-Key': apiLog.adminKey } : {}) }
+      : (guarded && apiLog.adminKey ? { 'X-Admin-Key': apiLog.adminKey } : {});
     let r;
     try {
       r = await fetch(url, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
+        headers,
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (e) {
@@ -194,6 +201,24 @@ export const useIncidentStore = defineStore('incident', () => {
     } catch (e) { ElMessage.error(short(e.message)); }
   }
 
+  /* ═══════════ 第四批 4.3：MTTD/MTTR 统计 + 4.2 待审批徽章数据（只读查询面） ═══════════ */
+  const stats = ref(null);
+  const pendingCount = ref(0);
+
+  async function loadStats() {
+    try { stats.value = await request('GET', '/api/incidents/stats'); }
+    catch { stats.value = null; }
+  }
+
+  /** 待审批积压数：徽章用，失败静默清零不阻塞其它请求 */
+  async function refreshPending() {
+    try {
+      const list = await request('GET', '/api/incidents?status=AWAITING_APPROVAL&page=0&size=200');
+      pendingCount.value = Array.isArray(list) ? list.length
+        : (list?.items?.length ?? list?.length ?? 0);
+    } catch { pendingCount.value = 0; }
+  }
+
   /* ═══════════ 动作：一键注入剧本 / 手动创建 / 审批决策 ═══════════ */
   async function seedScenario() {
     if (busy.value) return;
@@ -269,9 +294,10 @@ export const useIncidentStore = defineStore('incident', () => {
 
   return {
     id, snapshot, outcome, timeline, streamStatus, busy, replaying, replayMs,
-    modeBadge, outcomeChip, history,
+    modeBadge, outcomeChip, history, stats, pendingCount,
     request, loadIncident, syncDetail, openStream, stopStream,
     seedScenario, manualCreate, decide, clearHistory, setSpeed,
+    loadStats, refreshPending,
     fmtTime,
   };
 });

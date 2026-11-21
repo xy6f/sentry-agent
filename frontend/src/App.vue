@@ -14,6 +14,7 @@ import TimelineList from './components/TimelineList.vue';
 import HistoryTable from './components/HistoryTable.vue';
 import IncidentActions from './components/IncidentActions.vue';
 import ApiLogDrawer from './components/ApiLogDrawer.vue';
+import StatsPanel from './components/StatsPanel.vue';
 
 const store = useIncidentStore();
 const apiLog = useApiLogStore();
@@ -22,6 +23,7 @@ const target = computed(() => (store.id ? `事件 #${store.id}` : '—'));
 
 onMounted(() => {
   apiLog.probeApi(); // 旧版启动即探测
+  store.loadStats(); // 第四批 4.3：运行统计（落库关闭/失败时面板自动隐藏）
 });
 </script>
 
@@ -46,6 +48,7 @@ onMounted(() => {
       <TimelineList :entries="store.timeline" :src="store.streamStatus" />
     </section>
 
+    <StatsPanel />
     <HistoryTable />
   </main>
   <ApiLogDrawer />

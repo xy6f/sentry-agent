@@ -33,6 +33,8 @@ import java.util.concurrent.Executors;
 public class IncidentController {
 
     private final IncidentService incidentService;
+    /** 第四批 4.3：MTTD/MTTR 统计（落库开启时装配；关闭时 provider 无 bean → 端点回 503 提示） */
+    private final org.springframework.beans.factory.ObjectProvider<com.sentryagent.stats.IncidentStatsService> statsProvider;
 
     /** SSE 轮询间隔毫秒：补发历史后每隔该间隔查一次时间线有没有新增 */
     @Value("${sentry.sse.poll-interval-ms:400}")
@@ -67,6 +69,20 @@ public class IncidentController {
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(@RequestBody CreateReq req) {
         return ResponseEntity.ok(incidentService.createAndRun(req.getService(), req.getSummary()));
+    }
+
+    /**
+     * MTTD/MTTR/自愈率汇总 + 近 7 日 MTTR 趋势（第四批 4.3；前端大屏底部统计面板数据源）。
+     * 路径 /stats 与 /{id} 模板冲突时 Spring 精确匹配优先——字面段永远先命中。
+     */
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Object>> stats() {
+        com.sentryagent.stats.IncidentStatsService svc = statsProvider.getIfAvailable();
+        if (svc == null) {
+            return ResponseEntity.status(503).body(Map.of("code", "PERSISTENCE_DISABLED",
+                    "message", "统计依赖落库底账（sentry.persistence.enabled），当前不可用"));
+        }
+        return ResponseEntity.ok(svc.summary());
     }
 
     /**

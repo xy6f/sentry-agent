@@ -5,12 +5,31 @@
  * + 四枚状态徽章（模式推断 / Watchman / API 连通 / 事件终态）。
  * 逻辑与旧版 index.html + app.js 的徽标区一一对应（inferMode 迁入 parsers.js，store 暴露 computed）。
  */
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useIncidentStore } from '../stores/incident';
 import { useApiLogStore } from '../stores/apiLog';
 
 const store = useIncidentStore();
 const apiLog = useApiLogStore();
+
+/* 第四批 4.2：待审批积压徽章（简化版通知中心——数据来自 /api/incidents?status=
+   AWAITING_APPROVAL，10s 轮询；>0 时琥珀计数、点击跳历史表过滤视图暂以
+   store.loadIncident 选中首个待审批事件代替）。 */
+const pending = ref(0);
+let pendingTimer = null;
+async function tickPending() {
+  await store.refreshPending();
+  pending.value = store.pendingCount;
+}
+onMounted(() => { tickPending(); pendingTimer = setInterval(tickPending, 10000); });
+onUnmounted(() => clearInterval(pendingTimer));
+async function jumpPending() {
+  if (!pending.value) return;
+  const list = await store.request('GET', '/api/incidents?status=AWAITING_APPROVAL&page=0&size=1')
+    .catch(() => []);
+  const first = (Array.isArray(list) ? list : list?.items ?? [])[0];
+  if (first?.id) store.loadIncident(Number(first.id));
+}
 
 const mode = computed(() => {
   const m = store.modeBadge;
@@ -66,6 +85,12 @@ const api = computed(() => apiLog.apiOk === null
       <span class="badge" :class="api.cls" id="badge-api" title="连通性探测：任意一次 API 成功即绿">
         {{ api.text }}
       </span>
+      <button class="badge pending-badge" :class="pending > 0 ? 'warn' : 'dim'"
+        id="badge-pending" :disabled="!pending"
+        title="待审批积压数（第四批 4.2 通知中心简化形态）：10s 轮询，>0 时点击直接跳首个待审批事件"
+        @click="jumpPending">
+        待审批 <b class="mono">{{ pending }}</b>
+      </button>
       <span class="badge outcome-chip" :class="store.outcomeChip.cls" id="badge-outcome">
         {{ store.outcomeChip.text }}
       </span>
@@ -74,6 +99,12 @@ const api = computed(() => apiLog.apiOk === null
 </template>
 
 <style scoped>
+.pending-badge {
+  cursor: pointer; background: none; border: 1px solid var(--line);
+  font: 12px var(--sans); padding: 3px 8px; border-radius: 2px; color: var(--txt);
+}
+.pending-badge[disabled] { opacity: .55; cursor: default; }
+.pending-badge b { font-family: var(--mono); }
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 0 16px; height: 48px; flex-wrap: nowrap;

@@ -150,13 +150,13 @@ class IncidentRestartRecoveryTest extends com.sentryagent.support.MySQLContainer
             assertEquals(awaitingSteps, ((List<?>) view.get("timeline")).size());
 
             // status 过滤：DB 历史行同样参与（合并进列表后能被过滤出来）
-            List<Map<String, Object>> awaiting = incidentService.list("AWAITING_APPROVAL", 0, 100);
+            List<Map<String, Object>> awaiting = incidentService.list("AWAITING_APPROVAL", 0, 1000);
             assertTrue(awaiting.stream().anyMatch(s ->
                             ((Number) s.getOrDefault(IncidentState.INCIDENT_ID, 0L)).longValue() == ID_AWAITING),
                     "DB 历史行必须出现在 status 过滤后的列表里");
 
             // 不带过滤的全量列表：历史行在、且按事件号升序（分页参数同原契约）
-            List<Map<String, Object>> all = incidentService.list(null, 0, 100);
+            List<Map<String, Object>> all = incidentService.list(null, 0, 1000);
             long prev = -1;
             boolean sawHistory = false;
             for (Map<String, Object> row : all) {
@@ -214,7 +214,7 @@ class IncidentRestartRecoveryTest extends com.sentryagent.support.MySQLContainer
                     "timeline 必须由本进程登记处提供（运行中事件事实源是内存）");
 
             // DB 侧同号行不重复出现在列表里（合并去重：内存优先）
-            List<Map<String, Object>> all = incidentService.list(null, 0, 100);
+            List<Map<String, Object>> all = incidentService.list(null, 0, 1000);
             long hits = all.stream().filter(s ->
                     ((Number) s.getOrDefault(IncidentState.INCIDENT_ID, 0L)).longValue() == ID_MEMORY).count();
             assertEquals(1, hits, "同号事件在列表里只出现一次（内存优先去重）");

@@ -50,24 +50,45 @@ public abstract class MySQLContainerBaseTest {
      * 本机回退路径：什么都不注册，application-test.yml 的 localhost 配置自然生效。
      * 该回调在 Spring 上下文创建前执行，此时执行条件已放行
      * （Docker 可用 或 本机 MySQL 可达，二者必居其一）。
+     *
+     * <p>容器路径的容错（第四批自测抓到）：Docker CLI 存在 ≠ 守护进程可用，
+     * 也 ≠ mysql:8.0 镜像可拉（离线/镜像源故障时 start 抛 ImagePullException），
+     * 更 ≠ 容器 JDBC 握手成功。此前这些半残环境会把上下文炸穿而非回退。
+     * 现在启动失败记录原因并本机回退——本机 MySQL 同样不可达时才会真失败，
+     * 而那种情况 RequiresDockerCondition 已提前整类 SKIP。</p>
      */
     @DynamicPropertySource
     static void mysqlProps(DynamicPropertyRegistry registry) {
         if (DockerAvailability.isDockerAvailable()) {
             synchronized (MySQLContainerBaseTest.class) {
                 if (!started) {
-                    MYSQL.start();
-                    started = true;
-                    // Ryuk 之外再挂一个进程内兜底：JVM 退出时确保容器停止
-                    Runtime.getRuntime().addShutdownHook(new Thread(MYSQL::stop,
-                            "mysql-container-cleanup"));
+                    try {
+                        MYSQL.start();
+                        started = true;
+                        // Ryuk 之外再挂一个进程内兜底：JVM 退出时确保容器停止
+                        Runtime.getRuntime().addShutdownHook(new Thread(MYSQL::stop,
+                                "mysql-container-cleanup"));
+                    } catch (Throwable t) {
+                        System.err.println("[MySQLContainerBaseTest] Testcontainers 启动失败，"
+                                + "回退本机 MySQL（原因: " + rootCause(t) + "）");
+                    }
                 }
             }
-            registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
-            registry.add("spring.datasource.username", MYSQL::getUsername);
-            registry.add("spring.datasource.password", MYSQL::getPassword);
+            if (started) {
+                registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
+                registry.add("spring.datasource.username", MYSQL::getUsername);
+                registry.add("spring.datasource.password", MYSQL::getPassword);
+            }
         }
         // else：本机回退路径——不注册任何属性，application-test.yml 的
         // localhost:3306 + SPRING_DATASOURCE_PASSWORD 原样生效
+    }
+
+    private static String rootCause(Throwable t) {
+        Throwable c = t;
+        while (c.getCause() != null && c.getCause() != c) {
+            c = c.getCause();
+        }
+        return c.getClass().getSimpleName() + ": " + c.getMessage();
     }
 }

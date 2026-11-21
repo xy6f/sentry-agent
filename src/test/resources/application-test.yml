@@ -9,9 +9,11 @@
 #      纯逻辑用例照常执行，构建保持绿；矩阵说明见 docs/CI.md）。
 spring:
   datasource:
-    # 本地回退专用 url（原来缺省继承 application.yml 的 localhost:3306，这里显式钉死）：
-    # CI 无 Docker 无 MySQL 时 DB 用例已整类 SKIP，走到这里说明是"本地开发机"场景
-    url: jdbc:mysql://localhost:3399/sentry_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    # 本机回退 url：缺省 localhost:3306（与生产同构）。模拟"MySQL 不可达"验收
+    # 场景 b/c 时经环境变量 SPRING_DATASOURCE_URL 指向死端口即可——第四批自测
+    # 抓到原实现把死端口 3399 写死在这里，环境 a（Docker 关+本机 MySQL）下
+    # Testcontainers 失败回退时必然 Connection refused，属验收配置污染主路径的缺陷。
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/sentry_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
     username: root
     password: ${SPRING_DATASOURCE_PASSWORD:${CHANGEME_FALLBACK:changeme}}
   sql:

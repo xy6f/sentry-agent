@@ -94,6 +94,11 @@ sentry:
   # dev 辅助接口开关（POST /api/dev/seed-logs）。生产部署置 false 整体摘除
   dev-api:
     enabled: true
+  # 第四批 4.1：管理端点 API Key（审批决策/评测跑批）。
+  # 空=鉴权通道关闭（本地演示与回归零影响）；公网部署必须经环境变量 ADMIN_KEY
+  # 注入（docs/DEPLOY.md 必坑清单），调用方带 header X-Admin-Key。
+  security:
+    admin-key: ${ADMIN_KEY:}
   # Watchman 自动巡检：默认关——未部署 mini-judge 时轮询必失败会疯狂建事件。
   # 多服务多规则（Phase 2）：rules 列表可选，空=默认规则（judge-service 队列，旧行为兼容）。
   # 规则形态见 com.sentryagent.watchman.WatchmanRule 类注释（http-probe/prometheus/log-keyword）。
